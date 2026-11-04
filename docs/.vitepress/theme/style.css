@@ -1,0 +1,17 @@
+/* Mismo tema oscuro que la app (tokens de specs/07). Fuentes empaquetadas con la app, nunca remotas. */
+:root {
+  --vp-c-bg: #1b1b1b;
+  --vp-c-bg-alt: #232323;
+  --vp-c-bg-elv: #2a2a2a;
+  --vp-c-bg-soft: #2a2a2a;
+  --vp-c-divider: #3a3a3a;
+  --vp-c-border: #3a3a3a;
+  --vp-c-text-1: #d6d6d6;
+  --vp-c-text-2: #8c8c8c;
+  --vp-c-brand-1: #4aa3f5;
+  --vp-c-brand-2: #2d8ceb;
+  --vp-c-brand-3: #2d8ceb;
+  --vp-c-brand-soft: rgba(45, 140, 235, 0.16);
+  --vp-font-family-base: 'Source Sans 3', 'Segoe UI', 'Ubuntu', sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', Consolas, monospace;
+}

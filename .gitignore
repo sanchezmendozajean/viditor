@@ -1,0 +1,11 @@
+node_modules/
+out/
+dist/
+release/
+resources/ffmpeg/
+resources/docs/
+resources/licenses/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+test-results/
+*.log

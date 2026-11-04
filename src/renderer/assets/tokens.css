@@ -1,0 +1,28 @@
+/* Tokens de color de specs/07-diseno-interfaz.md */
+:root {
+  --bg-app: #1b1b1b;
+  --bg-panel: #232323;
+  --bg-panel-header: #2a2a2a;
+  --bg-input: #1a1a1a;
+  --bg-hover: #333333;
+  --border: #121212;
+  --border-subtle: #3a3a3a;
+  --text: #d6d6d6;
+  --text-dim: #8c8c8c;
+  --accent: #2d8ceb;
+  --accent-hover: #4aa3f5;
+  --clip-video: #7b76d6;
+  --clip-audio: #3fa37a;
+  --clip-image: #4aa9c9;
+  --transition: #c9b458;
+  --marker: #e8b33a;
+  --danger: #e5484d;
+  --warn: #f5a524;
+  --ok: #46a758;
+  --monitor-bg: #0e0e0e;
+  --console-bg: #161616;
+
+  --font-ui: 'Source Sans 3', 'Segoe UI', 'Ubuntu', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  --radius: 3px;
+}

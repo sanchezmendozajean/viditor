@@ -1,0 +1,50 @@
+@import './tokens.css';
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  background: var(--bg-app);
+  color: var(--text);
+  font: 11px/1.4 var(--font-ui);
+  overflow: hidden;
+  user-select: none;
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 0; }
+.mono { font-family: var(--font-mono); }
+.dim { color: var(--text-dim); }
+.drag { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
+
+button.btn {
+  background: var(--bg-panel-header);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 3px 12px;
+  cursor: pointer;
+  font-size: 11px;
+}
+button.btn:hover { background: var(--bg-hover); }
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.btn.primary:hover { background: var(--accent-hover); }
+button.btn:disabled { opacity: 0.45; cursor: default; }
+button.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; background: none; border: 0; border-radius: var(--radius);
+  color: var(--text-dim); cursor: pointer; padding: 0;
+}
+button.icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+input[type='text'], input[type='number'], select {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+  font-size: 11px;
+  user-select: text;
+}
+input[type='color'] { background: var(--bg-input); border: 1px solid var(--border-subtle); height: 26px; width: 40px; padding: 0; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 5px; border: 2px solid var(--bg-panel); }
+::-webkit-scrollbar-track { background: transparent; }
