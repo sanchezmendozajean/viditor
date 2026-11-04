@@ -20,8 +20,22 @@ import help from 'lucide-static/icons/circle-question-mark.svg?raw'
 import save from 'lucide-static/icons/save.svg?raw'
 import download from 'lucide-static/icons/download.svg?raw'
 import video from 'lucide-static/icons/video.svg?raw'
+import eye from 'lucide-static/icons/eye.svg?raw'
+import eyeOff from 'lucide-static/icons/eye-off.svg?raw'
+import lock from 'lucide-static/icons/lock.svg?raw'
+import unlock from 'lucide-static/icons/lock-open.svg?raw'
+import vol from 'lucide-static/icons/volume-2.svg?raw'
+import volOff from 'lucide-static/icons/volume-x.svg?raw'
+import grip from 'lucide-static/icons/grip-vertical.svg?raw'
+import pointer from 'lucide-static/icons/mouse-pointer-2.svg?raw'
+import razor from 'lucide-static/icons/scissors.svg?raw'
+import hand from 'lucide-static/icons/hand.svg?raw'
+import magnet from 'lucide-static/icons/magnet.svg?raw'
+import right from 'lucide-static/icons/chevron-right.svg?raw'
+import down from 'lucide-static/icons/chevron-down.svg?raw'
+import flag from 'lucide-static/icons/flag.svg?raw'
 
-const icons = { folder, 'folder-open': folderOpen, 'folder-plus': folderPlus, plus, x, minus, square, copy, search, link, alert, film, music, image, grid, list, help, save, download, video }
+const icons = { folder, 'folder-open': folderOpen, 'folder-plus': folderPlus, plus, x, minus, square, copy, search, link, alert, film, music, image, grid, list, help, save, download, video, eye, eyeOff, lock, unlock, vol, volOff, grip, pointer, razor, hand, magnet, right, down, flag }
 export type IconName = keyof typeof icons
 
 const props = defineProps<{ name: IconName; size?: number }>()

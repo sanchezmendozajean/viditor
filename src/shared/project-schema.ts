@@ -160,3 +160,8 @@ export const FPS_PRESETS = [
   { label: '59,94', num: 60000, den: 1001 },
   { label: '60', num: 60, den: 1 }
 ] as const
+
+export type Clip = z.infer<typeof clipSchema>
+export type Track = z.infer<typeof trackSchema>
+export type Transition = z.infer<typeof transitionSchema>
+export type Marker = z.infer<typeof markerSchema>

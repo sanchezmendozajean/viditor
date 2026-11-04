@@ -8,6 +8,7 @@ import ProjectPanel from './panels/ProjectPanel.vue'
 import MonitorPanel from './panels/MonitorPanel.vue'
 import InspectorPanel from './panels/InspectorPanel.vue'
 import PlaceholderPanel from './panels/PlaceholderPanel.vue'
+import TimelinePanel from './timeline/TimelinePanel.vue'
 
 const ui = useUiStore()
 const project = useProjectStore()
@@ -49,7 +50,7 @@ function setWorkspace(id: (typeof WORKSPACES)[number]['id']): void {
       </div>
       <Splitter dir="column" @drag="size.bottom = clamp(size.bottom - $event, 120, 560)" />
       <div class="row" :style="{ height: size.bottom + 'px' }">
-        <div class="pane flex"><PlaceholderPanel title="Línea de tiempo: Secuencia 1" hint="La línea de tiempo llega en la fase 2." help="timeline" /></div>
+        <div class="pane flex"><TimelinePanel /></div>
         <Splitter dir="row" @drag="size.meters = clamp(size.meters - $event, 60, 300)" />
         <div class="pane" :style="{ width: size.meters + 'px' }"><PlaceholderPanel title="Medidores" hint="L · R" /></div>
       </div>
@@ -72,7 +73,7 @@ function setWorkspace(id: (typeof WORKSPACES)[number]['id']): void {
     <div v-else-if="ui.workspace === 'audio'" class="cols">
       <div class="row top"><div class="pane flex"><PlaceholderPanel title="Mezclador de audio" hint="Faders y medidores por pista (fase 3)." /></div></div>
       <Splitter dir="column" @drag="size.bottom = clamp(size.bottom - $event, 120, 560)" />
-      <div class="row" :style="{ height: size.bottom + 'px' }"><div class="pane flex"><PlaceholderPanel title="Línea de tiempo" hint="Fase 2." help="timeline" /></div></div>
+      <div class="row" :style="{ height: size.bottom + 'px' }"><div class="pane flex"><TimelinePanel /></div></div>
     </div>
 
     <!-- Exportar -->

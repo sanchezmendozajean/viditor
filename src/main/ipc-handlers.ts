@@ -1,12 +1,14 @@
 import { join } from 'node:path'
-import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { ZodError } from 'zod'
-import { IPC, type BackgroundTask, type ImportRequest, type IpcResult, type NewProjectRequest } from '@shared/ipc'
+import { IPC, type BackgroundTask, type ImportRequest, type IpcResult, type NewProjectRequest, type Waveform } from '@shared/ipc'
 import { projectSchema, settingsSchema, type Project } from '@shared/project-schema'
 import { ProjectFormatError } from '@shared/migrations'
 import { ProjectService } from './services/project-service'
 import { ImportService } from './services/import-service'
-import { JobQueue, makeThumbnail } from './services/media-service'
+import { computeWaveform, JobQueue, makeThumbnail } from './services/media-service'
 import { openExternalFromUserClick } from './security'
 import { openHelpWindow } from './windows'
 
@@ -124,6 +126,30 @@ export function registerIpc(projects: ProjectService): void {
       })
     })
   )
+
+  ipcMain.handle(IPC.mediaWaveform, (e, mediaId: string, path: string) =>
+    guard(async () => {
+      const dir = projects.dir
+      if (!dir) throw new Error('No hay un proyecto abierto.')
+      if (!/^m_[0-9A-Za-z]+$/.test(String(mediaId))) throw new Error('Identificador de medio inválido.')
+      const cache = join(dir, '.viditor', 'cache', 'waveforms', `${mediaId}.json`)
+      if (existsSync(cache)) return JSON.parse(await readFile(cache, 'utf8')) as Waveform
+      jobQueue ??= queue(e.sender)
+      const wave = await jobQueue.run(`wave:${mediaId}`, `Forma de onda de ${String(path).split('/').pop()}`, () =>
+        computeWaveform(projects.resolveMediaPath(dir, String(path)))
+      )
+      await mkdir(join(cache, '..'), { recursive: true })
+      await writeFile(cache, JSON.stringify(wave))
+      return wave
+    })
+  )
+
+  ipcMain.on(IPC.mediaReveal, (_e, path: string) => {
+    const dir = projects.dir
+    if (!dir) return
+    const abs = projects.resolveMediaPath(dir, String(path))
+    if (existsSync(abs)) shell.showItemInFolder(abs)
+  })
 
   ipcMain.on(IPC.helpOpen, (_e, topic?: string) => openHelpWindow(typeof topic === 'string' ? topic : 'index'))
   ipcMain.on(IPC.appOpenExternal, (_e, url: string) => openExternalFromUserClick(String(url)))

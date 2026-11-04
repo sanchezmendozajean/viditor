@@ -11,6 +11,14 @@ export const WORKSPACES: { id: WorkspaceId; label: string }[] = [
   { id: 'export', label: 'Exportar' }
 ]
 
+export interface MenuEntry {
+  label: string
+  shortcut?: string
+  disabled?: boolean
+  separator?: boolean
+  action?: () => void
+}
+
 export interface ImportChoice {
   mode: Exclude<ImportMode, 'ask'>
   remember: boolean
@@ -25,9 +33,16 @@ export const useUiStore = defineStore('ui', {
     /** Se incrementa cuando termina una miniatura para refrescar las <img>. */
     thumbVersion: {} as Record<string, number>,
     toast: null as { text: string; kind: 'error' | 'info' } | null,
-    maximized: false
+    maximized: false,
+    /** Medio arrastrado desde el panel Proyecto hacia la línea de tiempo. */
+    dragMediaId: null as string | null,
+    contextMenu: null as { x: number; y: number; items: MenuEntry[] } | null
   }),
   actions: {
+    openMenu(e: MouseEvent, items: MenuEntry[]): void {
+      e.preventDefault()
+      this.contextMenu = { x: e.clientX, y: e.clientY, items }
+    },
     showError(text: string): void {
       this.toast = { text, kind: 'error' }
     },

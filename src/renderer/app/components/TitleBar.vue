@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { useUiStore } from '@/stores/ui'
+import { useTimelineStore } from '@/stores/timeline'
 import Icon from './Icon.vue'
 
 interface MenuItem { label: string; shortcut?: string; action?: () => void; disabled?: boolean; separator?: boolean }
@@ -9,6 +10,7 @@ interface Menu { label: string; items: MenuItem[] }
 
 const project = useProjectStore()
 const ui = useUiStore()
+const tl = useTimelineStore()
 const openMenu = ref<number | null>(null)
 let offMax: (() => void) | undefined
 
@@ -40,9 +42,37 @@ function menus(): Menu[] {
         { label: 'Salir', action: () => window.viditor.window.close() }
       ]
     },
-    { label: 'Editar', items: [{ label: 'Deshacer', shortcut: 'Ctrl+Z', disabled: true }, { label: 'Rehacer', shortcut: 'Ctrl+Shift+Z', disabled: true }] },
-    { label: 'Clip', items: [{ label: 'Disponible en la fase 2', disabled: true }] },
-    { label: 'Secuencia', items: [{ label: 'Disponible en la fase 2', disabled: true }] },
+    {
+      label: 'Editar',
+      items: [
+        { label: tl.undoLabel ? `Deshacer ${tl.undoLabel}` : 'Deshacer', shortcut: 'Ctrl+Z', disabled: !tl.canUndo, action: () => tl.undo() },
+        { label: tl.redoLabel ? `Rehacer ${tl.redoLabel}` : 'Rehacer', shortcut: 'Ctrl+Shift+Z', disabled: !tl.canRedo, action: () => tl.redo() },
+        { separator: true, label: '' },
+        { label: 'Seleccionar todo', shortcut: 'Ctrl+A', disabled: !has, action: () => tl.selectAll() }
+      ]
+    },
+    {
+      label: 'Clip',
+      items: [
+        { label: 'Dividir en el cabezal', shortcut: 'Ctrl+K', disabled: !has, action: () => tl.splitAtPlayhead() },
+        { label: 'Eliminar', shortcut: 'Supr', disabled: !has || !tl.selection.length, action: () => tl.deleteSelection(false) },
+        { label: 'Eliminar y cerrar hueco', shortcut: 'Mayús+Supr', disabled: !has || !tl.selection.length, action: () => tl.deleteSelection(true) },
+        { separator: true, label: '' },
+        { label: 'Recortar inicio al cabezal', shortcut: 'Q', disabled: !has, action: () => tl.trimToPlayhead('start') },
+        { label: 'Recortar final al cabezal', shortcut: 'W', disabled: !has, action: () => tl.trimToPlayhead('end') },
+        { label: 'Habilitar / deshabilitar', shortcut: 'Mayús+E', disabled: !has || !tl.selection.length, action: () => tl.toggleEnabled() }
+      ]
+    },
+    {
+      label: 'Secuencia',
+      items: [
+        { label: 'Agregar pista de video', disabled: !has, action: () => tl.addTrack('video', null, 'above') },
+        { label: 'Agregar pista de audio', disabled: !has, action: () => tl.addTrack('audio', null, 'below') },
+        { separator: true, label: '' },
+        { label: 'Agregar marcador', shortcut: 'M', disabled: !has, action: () => tl.addMarker() },
+        { label: 'Ajustar zoom a la secuencia', shortcut: '\\', disabled: !has, action: () => tl.fit(tl.viewWidth - 170) }
+      ]
+    },
     { label: 'Transiciones', items: [{ label: 'Disponible en la fase 4', disabled: true }] },
     { label: 'Ver', items: [{ label: 'Espacio de trabajo: Edición', disabled: !has, action: () => (ui.workspace = 'edit') }] },
     { label: 'Ventana', items: [{ label: 'Minimizar', action: () => window.viditor.window.minimize() }] },

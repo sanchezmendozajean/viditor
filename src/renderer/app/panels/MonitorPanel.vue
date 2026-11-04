@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useProjectStore } from '@/stores/project'
+import { useTimelineStore } from '@/stores/timeline'
+import { formatTimecode } from '@shared/timecode'
 import Panel from '../components/Panel.vue'
 
 const project = useProjectStore()
+const tl = useTimelineStore()
+const fmt = (t: number): string => {
+  const f = project.project?.settings.fps ?? { num: 30, den: 1 }
+  return formatTimecode(t, f.num, f.den)
+}
 const ratio = computed(() => {
   const s = project.project?.settings
   return s ? s.width / s.height : 16 / 9
@@ -20,7 +27,7 @@ const ratio = computed(() => {
           data-testid="monitor-frame"
         />
       </div>
-      <div class="tc"><span class="mono accent">00:00:00:00</span><span class="mono dim">00:00:00:00</span></div>
+      <div class="tc"><span class="mono accent" data-testid="monitor-tc">{{ fmt(tl.playhead) }}</span><span class="mono dim">{{ fmt(tl.duration) }}</span></div>
     </div>
   </Panel>
 </template>

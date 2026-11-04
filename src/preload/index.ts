@@ -35,6 +35,8 @@ const api: ViditorApi = {
     import: (req) => ipcRenderer.invoke(IPC.mediaImport, req),
     thumbnailUrl: (mediaId) => `viditor-media://thumb/${encodeURIComponent(mediaId)}.jpg`,
     pathForFile: (file) => webUtils.getPathForFile(file),
+    waveform: (mediaId, path) => ipcRenderer.invoke(IPC.mediaWaveform, mediaId, path),
+    reveal: (path) => ipcRenderer.send(IPC.mediaReveal, path),
     onTask: (cb) => subscribe<BackgroundTask>(IPC.mediaTask, cb)
   },
   help: { open: (topic) => ipcRenderer.send(IPC.helpOpen, topic) },

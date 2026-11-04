@@ -1,0 +1,90 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import type { Clip, MediaItem, Track } from '@shared/project-schema'
+import { clipDuration } from '@shared/timeline-ops'
+import { useUiStore } from '@/stores/ui'
+import { useWaveStore } from '@/stores/waves'
+import ClipWave from './ClipWave.vue'
+
+const props = defineProps<{
+  clip: Clip
+  media: MediaItem | undefined
+  track: Track
+  zoom: number
+  height: number
+  selected: boolean
+  dragging: boolean
+  missing: boolean
+  /** Posición provisional durante un arrastre */
+  start?: number
+}>()
+const emit = defineEmits<{ down: [e: PointerEvent, zone: 'left' | 'body' | 'right']; menu: [e: MouseEvent] }>()
+
+const ui = useUiStore()
+const waves = useWaveStore()
+
+const left = computed(() => (props.start ?? props.clip.start) * props.zoom)
+const width = computed(() => Math.max(2, clipDuration(props.clip) * props.zoom))
+const kindClass = computed(() => {
+  if (props.track.kind === 'audio') return 'audio'
+  return props.media?.kind === 'image' ? 'image' : 'video'
+})
+const wave = computed(() => (props.media ? waves.get(props.media.id) : null))
+const thumb = computed(() => {
+  if (props.track.kind !== 'video' || !props.media || props.media.kind === 'audio') return undefined
+  return `url(${window.viditor.media.thumbnailUrl(props.media.id)}?v=${ui.thumbVersion[props.media.id] ?? 0})`
+})
+const thumbH = computed(() => Math.max(10, props.height - 14))
+const waveColor = computed(() => (props.track.kind === 'audio' ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.6)'))
+
+function zoneOf(e: PointerEvent): 'left' | 'body' | 'right' {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const edge = Math.min(8, r.width / 3)
+  if (e.clientX - r.left <= edge) return 'left'
+  if (r.right - e.clientX <= edge) return 'right'
+  return 'body'
+}
+function onDown(e: PointerEvent): void {
+  emit('down', e, zoneOf(e))
+}
+function onMove(e: PointerEvent): void {
+  const z = zoneOf(e)
+  ;(e.currentTarget as HTMLElement).style.cursor = z === 'body' ? '' : 'ew-resize'
+}
+</script>
+
+<template>
+  <div
+    class="clip"
+    :class="[kindClass, { selected, disabled: !clip.enabled, dragging, missing }]"
+    :style="{ left: left + 'px', width: width + 'px', height: height + 'px' }"
+    :data-clip-id="clip.id"
+    data-testid="clip"
+    :title="clip.name"
+    @pointerdown="onDown"
+    @pointermove="onMove"
+    @contextmenu.stop="emit('menu', $event)"
+  >
+    <div v-if="thumb" class="thumbs" :style="{ backgroundImage: thumb, backgroundSize: `auto ${thumbH}px` }" />
+    <div v-if="wave" class="wavebox" :class="{ small: track.kind === 'video' }">
+      <ClipWave :wave="wave" :in-point="clip.in" :out-point="clip.out" :width="width" :height="track.kind === 'video' ? 22 : height - 14" :color="waveColor" />
+    </div>
+    <span class="name">{{ clip.name }}</span>
+    <span v-if="clip.audio.muted && track.kind === 'video'" class="muted" title="Audio separado">♪̸</span>
+  </div>
+</template>
+
+<style scoped>
+.clip { position: absolute; top: 2px; border-radius: 2px; overflow: hidden; background: var(--clip-video); border: 1px solid rgba(0, 0, 0, 0.45); cursor: default; }
+.clip.audio { background: var(--clip-audio); }
+.clip.image { background: var(--clip-image); }
+.clip.selected { border-color: #fff; filter: brightness(1.12); z-index: 3; }
+.clip.disabled { opacity: 0.4; background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(0, 0, 0, 0.35) 4px 8px); }
+.clip.dragging { opacity: 0.75; z-index: 4; outline: 1px dashed #fff; }
+.clip.missing { outline: 1px solid var(--danger); }
+.thumbs { position: absolute; left: 0; right: 0; top: 13px; bottom: 0; background-repeat: repeat-x; background-position: left center; opacity: 0.9; }
+.name { position: absolute; left: 4px; top: 0; right: 4px; height: 13px; line-height: 13px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; text-shadow: 0 0 2px #000; pointer-events: none; }
+.wavebox { position: absolute; left: 0; right: 0; top: 13px; bottom: 0; }
+.wavebox.small { top: auto; height: 22px; bottom: 0; background: rgba(0, 0, 0, 0.3); }
+.muted { position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: #fff; opacity: 0.8; }
+</style>

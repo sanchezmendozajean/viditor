@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import type { MediaItem } from '@shared/project-schema'
 import { useProjectStore } from '@/stores/project'
 import { useUiStore } from '@/stores/ui'
+import { useTimelineStore } from '@/stores/timeline'
 import Panel from '../components/Panel.vue'
 import Icon from '../components/Icon.vue'
 
@@ -57,8 +58,20 @@ function badge(m: MediaItem): { icon: 'folder' | 'link' | 'alert'; title: string
   if (isMissing(m)) return { icon: 'alert', title: 'Archivo faltante' }
   return m.storage === 'project' ? { icon: 'folder', title: 'Dentro del proyecto' } : { icon: 'link', title: 'Referencia externa' }
 }
+function showLoaded(e: Event): void {
+  ;(e.target as HTMLElement).style.visibility = ''
+}
 function hideBroken(e: Event): void {
   ;(e.target as HTMLElement).style.visibility = 'hidden'
+}
+
+function onDragStart(e: DragEvent, m: MediaItem): void {
+  ui.dragMediaId = m.id
+  e.dataTransfer?.setData('application/x-viditor-media', m.id)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
+}
+function append(m: MediaItem): void {
+  useTimelineStore().addMedia(m.id)
 }
 
 function onDrop(e: DragEvent): void {
@@ -92,9 +105,9 @@ function onDrop(e: DragEvent): void {
         <div v-for="b in bins" :key="b.id" class="card bin" @dblclick="currentBin = b.id">
           <Icon name="folder" :size="36" /><span class="name">{{ b.name }}</span>
         </div>
-        <div v-for="m in items" :key="m.id" class="card" data-testid="media-item" :title="m.path">
+        <div v-for="m in items" :key="m.id" class="card" data-testid="media-item" :title="`${m.path}\nDoble clic: agregar al final de la línea de tiempo`" draggable="true" @dragstart="onDragStart($event, m)" @dragend="ui.dragMediaId = null" @dblclick="append(m)">
           <div class="thumb">
-            <img v-if="m.kind !== 'audio'" :src="thumb(m)" alt="" draggable="false" @error="hideBroken" />
+            <img v-if="m.kind !== 'audio'" :src="thumb(m)" alt="" draggable="false" @error="hideBroken" @load="showLoaded" />
             <Icon v-else name="music" :size="28" />
             <span class="badge" :title="badge(m).title"><Icon :name="badge(m).icon" :size="12" /></span>
             <span class="dur mono">{{ duration(m) }}</span>
@@ -107,7 +120,7 @@ function onDrop(e: DragEvent): void {
         <thead><tr><th>Nombre</th><th>Duración</th><th>Resolución</th><th>fps</th><th>Códec</th><th>Ubicación</th></tr></thead>
         <tbody>
           <tr v-for="b in bins" :key="b.id" @dblclick="currentBin = b.id"><td colspan="6"><Icon name="folder" :size="13" /> {{ b.name }}</td></tr>
-          <tr v-for="m in items" :key="m.id" data-testid="media-row">
+          <tr v-for="m in items" :key="m.id" data-testid="media-row" draggable="true" @dragstart="onDragStart($event, m)" @dragend="ui.dragMediaId = null" @dblclick="append(m)">
             <td><Icon :name="badge(m).icon" :size="12" /> {{ fileName(m) }}</td>
             <td class="mono">{{ duration(m) }}</td><td>{{ resolution(m) }}</td><td>{{ fps(m) }}</td>
             <td>{{ m.probe?.videoCodec ?? m.probe?.audioCodec ?? '—' }}</td><td class="dim">{{ m.storage === 'project' ? 'Proyecto' : m.path }}</td>

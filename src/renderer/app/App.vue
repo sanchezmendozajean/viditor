@@ -8,6 +8,8 @@ import StartScreen from './StartScreen.vue'
 import EditorLayout from './EditorLayout.vue'
 import NewProjectDialog from './dialogs/NewProjectDialog.vue'
 import ImportDialog from './dialogs/ImportDialog.vue'
+import ContextMenu from './components/ContextMenu.vue'
+import { handleTimelineKey } from './shortcuts'
 
 const project = useProjectStore()
 const ui = useUiStore()
@@ -31,6 +33,8 @@ function onKey(e: KeyboardEvent): void {
   } else if (mod && e.key.toLowerCase() === 'i' && project.isOpen) {
     e.preventDefault()
     void project.importWithDialog()
+  } else if (project.isOpen && handleTimelineKey(e)) {
+    e.preventDefault()
   }
 }
 // Soltar archivos fuera de una zona de destino no debe navegar a ellos.
@@ -65,6 +69,7 @@ watch(
     <StatusBar />
     <NewProjectDialog v-if="ui.newProjectOpen" />
     <ImportDialog v-if="ui.importAsk" />
+    <ContextMenu />
     <div v-if="ui.toast" class="toast" :class="ui.toast.kind" role="alert" data-testid="toast" @click="ui.toast = null">{{ ui.toast.text }}</div>
   </div>
 </template>

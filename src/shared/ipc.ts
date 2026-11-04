@@ -44,6 +44,11 @@ export interface ImportResult {
   skipped: string[]
 }
 
+export interface Waveform {
+  perSecond: number
+  peaks: number[]
+}
+
 export interface BackgroundTask {
   id: string
   label: string
@@ -83,6 +88,10 @@ export interface ViditorApi {
     thumbnailUrl(mediaId: string): string
     /** Ruta absoluta de un File soltado (drag & drop). */
     pathForFile(file: File): string
+    /** Picos de forma de onda (caché en .viditor/cache/waveforms). */
+    waveform(mediaId: string, path: string): Promise<IpcResult<Waveform>>
+    /** Muestra el archivo del medio en el explorador del sistema. */
+    reveal(path: string): void
     onTask(cb: (task: BackgroundTask) => void): () => void
   }
   help: {
@@ -113,6 +122,8 @@ export const IPC = {
   mediaPlan: 'media:plan',
   mediaImport: 'media:import',
   mediaTask: 'media:task',
+  mediaWaveform: 'media:waveform',
+  mediaReveal: 'media:reveal',
   helpOpen: 'help:open',
   appMenuAction: 'app:menu-action',
   appOpenExternal: 'app:open-external'

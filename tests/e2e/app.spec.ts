@@ -10,6 +10,7 @@ let work: string
 let userData: string
 let app: ElectronApplication
 let page: Page
+let cspViolations: string[] = []
 
 function makeVideo(file: string, color: string): void {
   execFileSync(
@@ -61,6 +62,10 @@ test.beforeEach(async () => {
   delete env.ELECTRON_RUN_AS_NODE
   app = await electron.launch({ args: [root, `--user-data-dir=${userData}`], env })
   page = await app.firstWindow()
+  cspViolations = []
+  page.on('console', (m) => {
+    if (m.text().includes('Content Security Policy')) cspViolations.push(m.text().slice(0, 200))
+  })
   await page.waitForLoadState('domcontentloaded')
 })
 
@@ -131,6 +136,7 @@ test('fase 1: crear proyecto, importar con las 3 opciones, cerrar y reabrir; sin
   await expect(help.locator('h1, .name').first()).toContainText('Viditor')
   await help.close()
   expect(await blocked()).toEqual([])
+  expect(cspViolations).toEqual([])
 })
 
 test('crear un proyecto en una carpeta no vacía muestra un error amable', async () => {

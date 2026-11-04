@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -73,6 +73,52 @@ export async function makeThumbnail(file: string, kind: MediaItem['kind'], durat
   return true
 }
 
+export interface Waveform {
+  perSecond: number
+  /** Picos 0–255 (valor absoluto máximo por ventana) */
+  peaks: number[]
+}
+
+const WAVE_RATE = 8000
+export const WAVE_PER_SECOND = 50
+
+/** Picos de audio mono a 50 por segundo, leídos en streaming (sin cargar todo el PCM en memoria). */
+export async function computeWaveform(file: string): Promise<Waveform> {
+  const ffmpeg = await resolveBinary('ffmpeg')
+  const win = WAVE_RATE / WAVE_PER_SECOND
+  return new Promise((resolve, reject) => {
+    const p = spawn(ffmpeg, ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(WAVE_RATE), '-f', 's16le', 'pipe:1'], {
+      windowsHide: true
+    })
+    const peaks: number[] = []
+    let cur = 0
+    let count = 0
+    let carry: Buffer | null = null
+    let err = ''
+    p.stderr.on('data', (d: Buffer) => (err += d.toString()))
+    p.stdout.on('data', (chunk: Buffer) => {
+      const buf = carry ? Buffer.concat([carry, chunk]) : chunk
+      const usable = buf.length - (buf.length % 2)
+      for (let i = 0; i < usable; i += 2) {
+        const v = Math.abs(buf.readInt16LE(i))
+        if (v > cur) cur = v
+        if (++count === win) {
+          peaks.push(Math.min(255, Math.round((cur / 32768) * 255)))
+          cur = 0
+          count = 0
+        }
+      }
+      carry = usable < buf.length ? buf.subarray(usable) : null
+    })
+    p.on('error', reject)
+    p.on('close', (code) => {
+      if (count > 0) peaks.push(Math.min(255, Math.round((cur / 32768) * 255)))
+      if (code === 0) resolve({ perSecond: WAVE_PER_SECOND, peaks })
+      else reject(new Error(err.trim() || `ffmpeg terminó con código ${code}`))
+    })
+  })
+}
+
 /** Cola de trabajos con concurrencia limitada (miniaturas, y más adelante waveforms/proxies). */
 export class JobQueue {
   private running = 0
@@ -94,6 +140,24 @@ export class JobQueue {
       }
     })
     this.pump()
+  }
+
+  /** Encola un trabajo y devuelve su resultado (las miniaturas usan add, que no lo necesita). */
+  run<T>(id: string, label: string, job: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.emit({ id, label, progress: null, done: false })
+      this.pending.push(async () => {
+        try {
+          const v = await job()
+          this.emit({ id, label, progress: 1, done: true })
+          resolve(v)
+        } catch (e) {
+          this.emit({ id, label, progress: null, done: true, error: e instanceof Error ? e.message : String(e) })
+          reject(e)
+        }
+      })
+      this.pump()
+    })
   }
 
   private pump(): void {

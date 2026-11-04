@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import type { NewProjectRequest, OpenedProject, RecentProject } from '@shared/ipc'
-import type { Project } from '@shared/project-schema'
+import type { MediaItem, Project } from '@shared/project-schema'
 import { useUiStore } from './ui'
+import { useTimelineStore } from './timeline'
 
 const AUTOSAVE_MS = 2 * 60 * 1000
 
@@ -34,6 +35,7 @@ export const useProjectStore = defineStore('project', {
       this.dirty = false
       this.savedAt = Date.now()
       this.autosavedAt = null
+      useTimelineStore().reset()
       useUiStore().workspace = (['edit', 'transitions', 'audio', 'export'] as const).includes(project.view.workspace as 'edit')
         ? (project.view.workspace as 'edit')
         : 'edit'
@@ -109,20 +111,26 @@ export const useProjectStore = defineStore('project', {
     },
 
     /** Flujo completo de importación: planificar → preguntar (si procede) → importar. */
-    async importPaths(paths: string[]): Promise<void> {
+    async importPaths(paths: string[]): Promise<MediaItem[]> {
       const ui = useUiStore()
       const project = this.project
-      if (!project || paths.length === 0) return
+      if (!project || paths.length === 0) return []
       const plan = await window.viditor.media.plan(paths)
-      if (!plan.ok) return ui.showError(plan.error)
-      if (plan.value.count === 0) return ui.showInfo('No se encontraron archivos de video, audio o imagen compatibles.')
+      if (!plan.ok) {
+        ui.showError(plan.error)
+        return []
+      }
+      if (plan.value.count === 0) {
+        ui.showInfo('No se encontraron archivos de video, audio o imagen compatibles.')
+        return []
+      }
 
       let mode: 'reference' | 'copy' | 'move' = 'reference'
       if (plan.value.outsideCount > 0) {
         const configured = project.settings.importMode
         if (configured === 'ask') {
           const choice = await ui.askImportChoice(plan.value.outsideCount)
-          if (!choice) return
+          if (!choice) return []
           mode = choice.mode
           if (choice.remember) this.mutate((p) => (p.settings.importMode = choice.mode))
         } else {
@@ -131,7 +139,10 @@ export const useProjectStore = defineStore('project', {
       }
 
       const r = await window.viditor.media.import({ paths, mode, existingPaths: project.media.map((m) => m.path) })
-      if (!r.ok) return ui.showError(r.error)
+      if (!r.ok) {
+        ui.showError(r.error)
+        return []
+      }
       this.mutate((p) => {
         p.bins.push(...r.value.bins)
         p.media.push(...r.value.media)
@@ -139,6 +150,7 @@ export const useProjectStore = defineStore('project', {
       // Guardar enseguida: con "mover" el archivo original ya no está en su sitio.
       await this.save()
       if (r.value.skipped.length > 0) ui.showInfo(`Omitidos ${r.value.skipped.length} archivo(s): ${r.value.skipped.slice(0, 2).join("; ")}`)
+      return r.value.media
     }
   }
 })
