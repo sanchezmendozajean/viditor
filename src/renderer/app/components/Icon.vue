@@ -34,8 +34,15 @@ import magnet from 'lucide-static/icons/magnet.svg?raw'
 import right from 'lucide-static/icons/chevron-right.svg?raw'
 import down from 'lucide-static/icons/chevron-down.svg?raw'
 import flag from 'lucide-static/icons/flag.svg?raw'
+import play from 'lucide-static/icons/play.svg?raw'
+import pause from 'lucide-static/icons/pause.svg?raw'
+import skipBack from 'lucide-static/icons/skip-back.svg?raw'
+import skipFwd from 'lucide-static/icons/skip-forward.svg?raw'
+import left from 'lucide-static/icons/chevron-left.svg?raw'
+import rightArrow from 'lucide-static/icons/chevron-right.svg?raw'
+import repeat from 'lucide-static/icons/repeat.svg?raw'
 
-const icons = { folder, 'folder-open': folderOpen, 'folder-plus': folderPlus, plus, x, minus, square, copy, search, link, alert, film, music, image, grid, list, help, save, download, video, eye, eyeOff, lock, unlock, vol, volOff, grip, pointer, razor, hand, magnet, right, down, flag }
+const icons = { folder, 'folder-open': folderOpen, 'folder-plus': folderPlus, plus, x, minus, square, copy, search, link, alert, film, music, image, grid, list, help, save, download, video, eye, eyeOff, lock, unlock, vol, volOff, grip, pointer, razor, hand, magnet, right, down, flag, play, pause, skipBack, skipFwd, left, rightArrow, repeat }
 export type IconName = keyof typeof icons
 
 const props = defineProps<{ name: IconName; size?: number }>()

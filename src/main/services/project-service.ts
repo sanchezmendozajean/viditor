@@ -5,6 +5,7 @@ import { app } from 'electron'
 import { FORMAT_VERSION, type Project } from '@shared/project-schema'
 import { parseProject } from '@shared/migrations'
 import type { NewProjectRequest, OpenedProject, RecentProject } from '@shared/ipc'
+import type { MediaItem } from '@shared/project-schema'
 import { sanitizeFileName } from './paths'
 
 const MAX_RECENTS = 12
@@ -13,6 +14,18 @@ const MAX_BACKUPS = 10
 export class ProjectService {
   /** Ruta absoluta del .vdproj abierto, o null. */
   file: string | null = null
+
+  /** Medios del proyecto abierto (id → ruta y proxy) para servirlos por viditor-media://. */
+  readonly mediaIndex = new Map<string, { path: string; proxy?: string }>()
+
+  syncMedia(list: Pick<MediaItem, 'id' | 'path' | 'proxy'>[]): void {
+    this.mediaIndex.clear()
+    for (const m of list) this.mediaIndex.set(m.id, { path: m.path, proxy: m.proxy })
+  }
+
+  addMedia(list: Pick<MediaItem, 'id' | 'path' | 'proxy'>[]): void {
+    for (const m of list) this.mediaIndex.set(m.id, { path: m.path, proxy: m.proxy })
+  }
 
   get dir(): string | null {
     return this.file ? dirname(this.file) : null
@@ -79,6 +92,7 @@ export class ProjectService {
     const file = join(dir, `${folder}.vdproj`)
     await writeAtomic(file, serialize(project))
     this.file = file
+    this.syncMedia(project.media)
     await this.pushRecent(file, name)
     return { file, dir, project, missing: [] }
   }
@@ -92,6 +106,7 @@ export class ProjectService {
     await mkdir(join(dir, '.viditor', 'backups'), { recursive: true })
     const missing = project.media.filter((m) => !existsSync(this.resolveMediaPath(dir, m.path))).map((m) => m.id)
     this.file = abs
+    this.syncMedia(project.media)
     await this.pushRecent(abs, project.name)
     return { file: abs, dir, project, missing }
   }
@@ -124,6 +139,7 @@ export class ProjectService {
 
   close(): void {
     this.file = null
+    this.mediaIndex.clear()
   }
 
   name(): string {

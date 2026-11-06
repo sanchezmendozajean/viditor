@@ -93,6 +93,10 @@ export interface ViditorApi {
     /** Muestra el archivo del medio en el explorador del sistema. */
     reveal(path: string): void
     onTask(cb: (task: BackgroundTask) => void): () => void
+    /** Un proxy H.264 terminó de generarse (ruta relativa al proyecto). */
+    onProxyReady(cb: (e: { mediaId: string; path: string }) => void): () => void
+    /** URL de reproducción de un medio: original o su proxy. */
+    sourceUrl(mediaId: string, proxy: boolean): string
   }
   help: {
     open(topic?: string): void
@@ -123,6 +127,7 @@ export const IPC = {
   mediaImport: 'media:import',
   mediaTask: 'media:task',
   mediaWaveform: 'media:waveform',
+  mediaProxyReady: 'media:proxy-ready',
   mediaReveal: 'media:reveal',
   helpOpen: 'help:open',
   appMenuAction: 'app:menu-action',

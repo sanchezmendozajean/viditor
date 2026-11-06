@@ -1,4 +1,4 @@
-import { frameDuration } from '@shared/timeline-ops'
+import { engine } from '@/engine/engine'
 import { useProjectStore } from '@/stores/project'
 import { useTimelineStore } from '@/stores/timeline'
 
@@ -12,7 +12,6 @@ export function handleTimelineKey(e: KeyboardEvent): boolean {
   if (!p) return false
   const mod = e.ctrlKey || e.metaKey
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
-  const fd = frameDuration(p)
 
   if (mod) {
     switch (key) {
@@ -35,6 +34,10 @@ export function handleTimelineKey(e: KeyboardEvent): boolean {
   if (e.altKey) return false
 
   switch (key) {
+    case ' ': engine.toggle(); return true
+    case 'l': engine.shuttle(1); return true
+    case 'j': engine.shuttle(-1); return true
+    case 'k': engine.pause(); return true
     case 'v': tl.tool = 'select'; return true
     case 'c': tl.tool = 'razor'; return true
     case 'h': tl.tool = 'hand'; return true
@@ -54,8 +57,8 @@ export function handleTimelineKey(e: KeyboardEvent): boolean {
       return true
     case 'Home': tl.setPlayhead(0); return true
     case 'End': tl.setPlayhead(tl.duration); return true
-    case 'ArrowLeft': tl.setPlayhead(tl.playhead - fd * (e.shiftKey ? 5 : 1)); return true
-    case 'ArrowRight': tl.setPlayhead(tl.playhead + fd * (e.shiftKey ? 5 : 1)); return true
+    case 'ArrowLeft': engine.step(e.shiftKey ? -5 : -1); return true
+    case 'ArrowRight': engine.step(e.shiftKey ? 5 : 1); return true
     case 'ArrowUp': tl.seekEdge(-1); return true
     case 'ArrowDown': tl.seekEdge(1); return true
     case '+':

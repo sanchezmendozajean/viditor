@@ -10,6 +10,16 @@
 | `Ctrl+I` | Importar medios |
 | `F1` | Abrir esta documentación |
 
+## Reproducción
+
+| Atajo | Acción |
+|-------|--------|
+| `Espacio` | Reproducir / pausa |
+| `L` | Reproducir hacia delante; pulsa de nuevo para ×2 y ×4 |
+| `J` | Reproducir hacia atrás (sin audio); pulsa de nuevo para ×2 y ×4 |
+| `K` | Pausa |
+| `←` `→` | Frame anterior / siguiente (`Mayús`: 5 frames) |
+
 ## Línea de tiempo
 
 | Atajo | Acción |

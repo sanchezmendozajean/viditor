@@ -8,7 +8,7 @@ import type { ProjectService } from './services/project-service'
 /** Debe llamarse antes de `app.whenReady()`. */
 export function registerSchemes(): void {
   protocol.registerSchemesAsPrivileged([
-    { scheme: 'viditor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: false } },
+    { scheme: 'viditor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: false } },
     { scheme: 'viditor-docs', privileges: { standard: true, secure: true, supportFetchAPI: true, bypassCSP: false } }
   ])
 }
@@ -27,13 +27,16 @@ const MIME: Record<string, string> = {
   '.mp4': 'video/mp4'
 }
 
-function fileResponse(file: string): Promise<Response> {
-  return net.fetch(pathToFileURL(file).toString()).then((res) => {
+function fileResponse(file: string, request?: Request, cors = false): Promise<Response> {
+  // Se reenvían las cabeceras (Range) para que <video> pueda buscar dentro del archivo.
+  const init = request ? { headers: request.headers } : undefined
+  return net.fetch(pathToFileURL(file).toString(), init).then((res) => {
     const type = MIME[extname(file).toLowerCase()]
-    if (!type) return res
     const headers = new Headers(res.headers)
-    headers.set('content-type', type)
-    return new Response(res.body, { status: res.status, headers })
+    if (type) headers.set('content-type', type)
+    // CORS: sin él, WebGL no puede subir el vídeo como textura (origen cruzado).
+    if (cors) headers.set('access-control-allow-origin', '*')
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
   })
 }
 
@@ -54,11 +57,19 @@ export function registerProtocolHandlers(projects: ProjectService): void {
     const url = new URL(request.url)
     const dir = projects.dir
     if (!dir) return notFound()
+    if (url.hostname === 'file' || url.hostname === 'proxy') {
+      const id = decodeURIComponent(url.pathname.replace(/^\//, ''))
+      const entry = projects.mediaIndex.get(id)
+      if (!entry) return notFound()
+      const rel = url.hostname === 'proxy' ? (entry.proxy ?? `.viditor/cache/proxies/${id}.mp4`) : entry.path
+      const file = projects.resolveMediaPath(dir, rel)
+      return existsSync(file) ? fileResponse(file, request, true) : notFound()
+    }
     if (url.hostname === 'thumb') {
       const id = decodeURIComponent(url.pathname.replace(/^\//, '')).replace(/\.jpg$/, '')
       if (!/^m_[0-9A-Za-z]+$/.test(id)) return notFound()
       const file = join(dir, '.viditor', 'cache', 'thumbs', `${id}.jpg`)
-      return existsSync(file) ? fileResponse(file) : notFound()
+      return existsSync(file) ? fileResponse(file, undefined, true) : notFound()
     }
     return notFound()
   })

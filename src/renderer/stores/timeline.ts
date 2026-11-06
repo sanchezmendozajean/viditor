@@ -129,12 +129,35 @@ export const useTimelineStore = defineStore('timeline', {
       this.revision++
     },
 
+    // ───── Edición de propiedades de los clips seleccionados (Inspector, monitor) ─────
+
+    /** Aplica un cambio discreto a los clips seleccionables como un solo comando. */
+    editSelected(label: string, fn: (clip: Clip, p: Project) => void): void {
+      const ids = this.editableSelection()
+      if (ids.length === 0) return
+      this.run(label, (p) => {
+        for (const c of p.clips) if (ids.includes(c.id)) fn(c, p)
+      })
+    },
+    /** Cambio en vivo durante un arrastre: no entra al historial hasta `commit`. */
+    liveSelected(fn: (clip: Clip, p: Project) => void): void {
+      const ids = this.editableSelection()
+      useProjectStore().mutate((p) => {
+        for (const c of p.clips) if (ids.includes(c.id)) fn(c, p)
+      })
+    },
+
     // ───── Cabezal, zoom, selección ─────
 
     setPlayhead(t: number): void {
       const p = this.project
       if (!p) return
       p.view.playhead = Math.max(0, ops.quantize(p, t))
+    },
+    /** Cabezal sin cuantizar (durante la reproducción). */
+    setPlayheadRaw(t: number): void {
+      const p = this.project
+      if (p) p.view.playhead = Math.max(0, t)
     },
     setZoom(z: number): void {
       const p = this.project

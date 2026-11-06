@@ -14,6 +14,7 @@ import { handleTimelineKey } from './shortcuts'
 const project = useProjectStore()
 const ui = useUiStore()
 let offTask: (() => void) | undefined
+let offProxy: (() => void) | undefined
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 
 function onKey(e: KeyboardEvent): void {
@@ -42,12 +43,20 @@ const stopDrop = (e: DragEvent): void => e.preventDefault()
 
 onMounted(() => {
   offTask = window.viditor.media.onTask((t) => ui.onTask(t))
+  // Un proxy H.264 terminó: el medio pasa a reproducirse desde él (el original no se toca).
+  offProxy = window.viditor.media.onProxyReady(({ mediaId, path }) => {
+    project.mutate((p) => {
+      const m = p.media.find((x) => x.id === mediaId)
+      if (m) m.proxy = path
+    })
+  })
   window.addEventListener('keydown', onKey)
   window.addEventListener('dragover', stopDrop)
   window.addEventListener('drop', stopDrop)
 })
 onUnmounted(() => {
   offTask?.()
+  offProxy?.()
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('dragover', stopDrop)
   window.removeEventListener('drop', stopDrop)

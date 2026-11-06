@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rename } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { MediaItem, Probe } from '@shared/project-schema'
@@ -28,6 +28,7 @@ interface FfprobeStream {
   avg_frame_rate?: string
   r_frame_rate?: string
   duration?: string
+  pix_fmt?: string
   side_data_list?: { rotation?: number }[]
   tags?: { rotate?: string }
 }
@@ -59,7 +60,8 @@ export async function probeFile(file: string, kind: MediaItem['kind']): Promise<
     hasAudio: Boolean(a),
     videoCodec: v?.codec_name,
     audioCodec: a?.codec_name,
-    rotation: Number.isFinite(rotation) ? rotation : 0
+    rotation: Number.isFinite(rotation) ? rotation : 0,
+    pixFmt: v?.pix_fmt
   }
 }
 
@@ -143,12 +145,12 @@ export class JobQueue {
   }
 
   /** Encola un trabajo y devuelve su resultado (las miniaturas usan add, que no lo necesita). */
-  run<T>(id: string, label: string, job: () => Promise<T>): Promise<T> {
+  run<T>(id: string, label: string, job: (progress: (p: number) => void) => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       this.emit({ id, label, progress: null, done: false })
       this.pending.push(async () => {
         try {
-          const v = await job()
+          const v = await job((p) => this.emit({ id, label, progress: Math.max(0, Math.min(1, p)), done: false }))
           this.emit({ id, label, progress: 1, done: true })
           resolve(v)
         } catch (e) {
@@ -171,4 +173,49 @@ export class JobQueue {
       })
     }
   }
+}
+
+// ───────── Proxies ─────────
+
+const WEB_CONTAINERS = new Set(['.mp4', '.m4v', '.mov', '.webm'])
+const WEB_VIDEO = new Set(['h264', 'vp8', 'vp9', 'av1'])
+const WEB_AUDIO = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac', 'pcm_s16le', 'pcm_s24le', 'pcm_f32le'])
+
+/**
+ * ¿Chromium no puede reproducir este vídeo de forma fiable? (códecs como ProRes, H.265 o AVI antiguos,
+ * y H.264 de 10 bits o 4:2:2/4:4:4). En ese caso se genera un proxy H.264 para la vista previa.
+ */
+export function needsProxy(m: Pick<MediaItem, 'kind' | 'path' | 'probe'>): boolean {
+  if (m.kind !== 'video') return false
+  const p = m.probe
+  if (!WEB_CONTAINERS.has(extname(m.path).toLowerCase())) return true
+  if (p?.videoCodec && !WEB_VIDEO.has(p.videoCodec)) return true
+  if (p?.audioCodec && !WEB_AUDIO.has(p.audioCodec)) return true
+  if (p?.pixFmt && /(10|12|16)(le|be)|422|444/.test(p.pixFmt)) return true
+  return false
+}
+
+/** Transcodifica a H.264/AAC (máx. 1080p) con progreso. El original nunca se toca. */
+export async function makeProxy(src: string, out: string, duration: number, onProgress: (p: number) => void): Promise<void> {
+  const ffmpeg = await resolveBinary('ffmpeg')
+  await mkdir(join(out, '..'), { recursive: true })
+  const tmp = out + '.partial.mp4'
+  const args = [
+    '-v', 'error', '-y', '-i', src, '-map', '0:v:0', '-map', '0:a:0?',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+    '-vf', "scale='min(1920,iw)':-2", '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart',
+    '-progress', 'pipe:1', '-nostats', tmp
+  ]
+  await new Promise<void>((resolve, reject) => {
+    const p = spawn(ffmpeg, args, { windowsHide: true })
+    let err = ''
+    p.stderr.on('data', (d: Buffer) => (err += d.toString()))
+    p.stdout.on('data', (d: Buffer) => {
+      const m = /out_time_us=(d+)/.exec(d.toString())
+      if (m && duration > 0) onProgress(Number(m[1]) / 1e6 / duration)
+    })
+    p.on('error', reject)
+    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim() || `ffmpeg terminó con código ${code}`))))
+  })
+  await rename(tmp, out)
 }

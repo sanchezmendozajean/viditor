@@ -21,7 +21,9 @@ export function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      webSecurity: true
+      webSecurity: true,
+      // La reproducción de audio/vídeo no debe exigir un gesto del usuario (el motor arranca desde atajos de teclado).
+      autoplayPolicy: 'no-user-gesture-required'
     }
   })
   hardenWindow(win, 'file://')

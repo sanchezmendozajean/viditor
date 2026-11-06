@@ -26,7 +26,8 @@ export const probeSchema = z.object({
   hasAudio: z.boolean().default(false),
   videoCodec: z.string().optional(),
   audioCodec: z.string().optional(),
-  rotation: z.number().default(0)
+  rotation: z.number().default(0),
+  pixFmt: z.string().optional()
 })
 
 export const mediaSchema = z.object({

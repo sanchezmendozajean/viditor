@@ -37,7 +37,9 @@ const api: ViditorApi = {
     pathForFile: (file) => webUtils.getPathForFile(file),
     waveform: (mediaId, path) => ipcRenderer.invoke(IPC.mediaWaveform, mediaId, path),
     reveal: (path) => ipcRenderer.send(IPC.mediaReveal, path),
-    onTask: (cb) => subscribe<BackgroundTask>(IPC.mediaTask, cb)
+    onTask: (cb) => subscribe<BackgroundTask>(IPC.mediaTask, cb),
+    onProxyReady: (cb) => subscribe<{ mediaId: string; path: string }>(IPC.mediaProxyReady, cb),
+    sourceUrl: (mediaId, proxy) => `viditor-media://${proxy ? 'proxy' : 'file'}/${encodeURIComponent(mediaId)}`
   },
   help: { open: (topic) => ipcRenderer.send(IPC.helpOpen, topic) },
   app: {

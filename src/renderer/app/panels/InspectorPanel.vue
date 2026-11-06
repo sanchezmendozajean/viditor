@@ -1,38 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { clipDuration } from '@shared/timeline-ops'
-import { formatTimecode } from '@shared/timecode'
 import { useProjectStore } from '@/stores/project'
 import { useTimelineStore } from '@/stores/timeline'
 import Panel from '../components/Panel.vue'
+import ClipInspector from './ClipInspector.vue'
 
 const project = useProjectStore()
 const tl = useTimelineStore()
 
-const fps = computed(() => project.project?.settings.fps ?? { num: 30, den: 1 })
-const tc = (t: number): string => formatTimecode(t, fps.value.num, fps.value.den)
-const clip = computed(() => (tl.selectedClips.length === 1 ? tl.selectedClips[0] : undefined))
-const trackName = computed(() => project.project?.tracks.find((t) => t.id === clip.value?.trackId)?.name ?? '')
 const track = computed(() => project.project?.tracks.find((t) => t.id === tl.selectedTrackId))
 </script>
 
 <template>
   <Panel title="Inspector" help="project">
-    <div v-if="project.project && clip" class="insp" data-testid="inspector-clip">
-      <h3>Clip: {{ clip.name }}</h3>
-      <dl>
-        <dt>Pista</dt><dd>{{ trackName }}</dd>
-        <dt>Inicio</dt><dd class="mono">{{ tc(clip.start) }}</dd>
-        <dt>Duración</dt><dd class="mono">{{ tc(clipDuration(clip)) }}</dd>
-        <dt>Entrada</dt><dd class="mono">{{ tc(clip.in) }}</dd>
-        <dt>Salida</dt><dd class="mono">{{ tc(clip.out) }}</dd>
-        <dt>Estado</dt><dd>{{ clip.enabled ? 'Habilitado' : 'Deshabilitado' }}</dd>
-      </dl>
-      <p class="dim hint">Movimiento, opacidad y audio llegan en la fase 3.</p>
-    </div>
-    <div v-else-if="project.project && tl.selection.length > 1" class="insp" data-testid="inspector-multi">
-      <h3>{{ tl.selection.length }} clips seleccionados</h3>
-    </div>
+    <ClipInspector v-if="project.project && tl.selection.length > 0" />
     <div v-else-if="project.project && track" class="insp" data-testid="inspector-track">
       <h3>Pista: {{ track.name }}</h3>
       <dl>

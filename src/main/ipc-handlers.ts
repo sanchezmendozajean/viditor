@@ -7,6 +7,8 @@ import { IPC, type BackgroundTask, type ImportRequest, type IpcResult, type NewP
 import { projectSchema, settingsSchema, type Project } from '@shared/project-schema'
 import { ProjectFormatError } from '@shared/migrations'
 import { ProjectService } from './services/project-service'
+import { ensureProxies } from './services/proxy-service'
+import type { MediaItem } from '@shared/project-schema'
 import { ImportService } from './services/import-service'
 import { computeWaveform, JobQueue, makeThumbnail } from './services/media-service'
 import { openExternalFromUserClick } from './security'
@@ -77,26 +79,48 @@ export function registerIpc(projects: ProjectService): void {
   ipcMain.handle(IPC.projectDefaultDir, () => projects.defaultParentDir())
   ipcMain.handle(IPC.projectRecents, () => projects.recents())
   ipcMain.handle(IPC.projectRemoveRecent, (_e, path: string) => projects.removeRecent(String(path)))
+  const queue = (sender: Electron.WebContents): JobQueue =>
+    new JobQueue(2, (task: BackgroundTask) => {
+      if (!sender.isDestroyed()) sender.send(IPC.mediaTask, task)
+    })
+  let jobQueue: JobQueue | null = null
+  const getQueue = (sender: Electron.WebContents): JobQueue => (jobQueue ??= queue(sender))
+
+  /** Lanza la generación de proxies y avisa al renderer cuando cada uno queda listo. */
+  const startProxies = (sender: Electron.WebContents, items: MediaItem[]): void => {
+    const dir = projects.dir
+    if (!dir) return
+    ensureProxies(projects, dir, items, getQueue(sender), (mediaId, path) => {
+      projects.addMedia([{ id: mediaId, path: items.find((m) => m.id === mediaId)?.path ?? '', proxy: path }])
+      if (!sender.isDestroyed()) sender.send(IPC.mediaProxyReady, { mediaId, path })
+    })
+  }
+
   ipcMain.handle(IPC.projectCreate, (_e, req: NewProjectRequest) =>
     guard(async () => {
       const settings = settingsSchema.parse(req.settings)
       return projects.create({ name: String(req.name), parentDir: String(req.parentDir), settings })
     })
   )
-  ipcMain.handle(IPC.projectOpen, (_e, file: string) => guard(() => projects.open(String(file))))
+  ipcMain.handle(IPC.projectOpen, (e, file: string) =>
+    guard(async () => {
+      const opened = await projects.open(String(file))
+      startProxies(e.sender, opened.project.media)
+      return opened
+    })
+  )
   ipcMain.handle(IPC.projectSave, (_e, project: Project) =>
-    guard(async () => ({ savedAt: await projects.save(projectSchema.parse(project)) }))
+    guard(async () => {
+      const p = projectSchema.parse(project)
+      const savedAt = await projects.save(p)
+      projects.syncMedia(p.media)
+      return { savedAt }
+    })
   )
   ipcMain.handle(IPC.projectAutosave, (_e, project: Project) =>
     guard(async () => ({ savedAt: await projects.autosave(projectSchema.parse(project)) }))
   )
   ipcMain.handle(IPC.projectClose, () => projects.close())
-
-  const queue = (sender: Electron.WebContents): JobQueue =>
-    new JobQueue(2, (task: BackgroundTask) => {
-      if (!sender.isDestroyed()) sender.send(IPC.mediaTask, task)
-    })
-  let jobQueue: JobQueue | null = null
 
   ipcMain.handle(IPC.mediaPlan, (_e, paths: string[]) =>
     guard(async () => {
@@ -111,19 +135,21 @@ export function registerIpc(projects: ProjectService): void {
       const dir = projects.dir
       if (!dir) throw new Error('No hay un proyecto abierto.')
       if (!['reference', 'copy', 'move'].includes(req.mode)) throw new Error('Modo de importación inválido.')
-      jobQueue ??= queue(e.sender)
-      const q = jobQueue
+      const q = getQueue(e.sender)
       const clean: ImportRequest = {
         paths: req.paths.map(String),
         mode: req.mode,
         existingPaths: (req.existingPaths ?? []).map(String)
       }
-      return imports.import(dir, clean, (item, abs) => {
+      const result = await imports.import(dir, clean, (item, abs) => {
         q.add(`thumb:${item.id}`, `Miniatura de ${item.path.split('/').pop()}`, async () => {
           const out = join(dir, '.viditor', 'cache', 'thumbs', `${item.id}.jpg`)
           await makeThumbnail(abs, item.kind, item.probe?.duration ?? 0, out)
         })
       })
+      projects.addMedia(result.media)
+      startProxies(e.sender, result.media)
+      return result
     })
   )
 
@@ -134,8 +160,7 @@ export function registerIpc(projects: ProjectService): void {
       if (!/^m_[0-9A-Za-z]+$/.test(String(mediaId))) throw new Error('Identificador de medio inválido.')
       const cache = join(dir, '.viditor', 'cache', 'waveforms', `${mediaId}.json`)
       if (existsSync(cache)) return JSON.parse(await readFile(cache, 'utf8')) as Waveform
-      jobQueue ??= queue(e.sender)
-      const wave = await jobQueue.run(`wave:${mediaId}`, `Forma de onda de ${String(path).split('/').pop()}`, () =>
+      const wave = await getQueue(e.sender).run(`wave:${mediaId}`, `Forma de onda de ${String(path).split('/').pop()}`, () =>
         computeWaveform(projects.resolveMediaPath(dir, String(path)))
       )
       await mkdir(join(cache, '..'), { recursive: true })

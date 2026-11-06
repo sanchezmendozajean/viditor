@@ -30,6 +30,9 @@ export default defineConfig({
             { text: 'Crear y abrir proyectos', link: '/guia/crear-y-abrir-proyectos' },
             { text: 'Importar medios', link: '/guia/importar-medios' },
             { text: 'Línea de tiempo', link: '/guia/linea-de-tiempo' },
+            { text: 'Vista previa y reproducción', link: '/guia/vista-previa' },
+            { text: 'Transformaciones', link: '/guia/transformaciones' },
+            { text: 'Audio y mezclador', link: '/guia/audio' },
             { text: 'Atajos de teclado', link: '/guia/atajos' }
           ]
         }
