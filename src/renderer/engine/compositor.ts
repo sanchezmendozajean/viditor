@@ -3,7 +3,13 @@ import type { DisplayItem, DisplayList, Filters, LayerItem, Mat, MaskItem, Shape
 import { parseColor } from '../../transition-runtime/colors'
 import { rasterizeShape } from './shape-raster'
 
-export type Source = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | ImageBitmap
+/** Píxeles RGBA sin procesar (arriba→abajo): los frames decodificados por FFmpeg en la exportación. */
+export interface RawFrame {
+  width: number
+  height: number
+  data: Uint8Array
+}
+export type Source = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | ImageBitmap | RawFrame
 
 const VERT = `#version 300 es
 in vec2 aPos;
@@ -279,7 +285,8 @@ export class Compositor {
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, tex)
     try {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src as TexImageSource)
+      if ('data' in src) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, src.data)
+      else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src as TexImageSource)
     } catch {
       return // fuente aún sin datos o con origen cruzado: se omite
     }

@@ -47,6 +47,7 @@ export default defineConfig({
             { text: 'Vista previa y reproducción', link: '/guia/vista-previa' },
             { text: 'Transformaciones', link: '/guia/transformaciones' },
             { text: 'Audio y mezclador', link: '/guia/audio' },
+            { text: 'Exportar', link: '/guia/exportar' },
             { text: 'Atajos de teclado', link: '/guia/atajos' }
           ]
         }

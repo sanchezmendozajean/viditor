@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { ExportProgress } from '../shared/export-model'
 import { IPC, type BackgroundTask, type TransitionFile, type ViditorApi } from '../shared/ipc'
 
 function subscribe<T>(channel: string, cb: (value: T) => void): () => void {
@@ -51,6 +52,25 @@ const api: ViditorApi = {
     onChanged: (cb) => subscribe<TransitionFile[]>(IPC.transitionsChanged, cb)
   },
   help: { open: (topic) => ipcRenderer.send(IPC.helpOpen, topic) },
+  export: {
+    capabilities: () => ipcRenderer.invoke(IPC.exportCaps),
+    defaultOutput: (name, ext) => ipcRenderer.invoke(IPC.exportDefaultOutput, name, ext),
+    chooseOutput: (defaultPath, ext) => ipcRenderer.invoke(IPC.exportChooseOutput, defaultPath, ext),
+    start: (project, options) => ipcRenderer.invoke(IPC.exportStart, project, options),
+    cancel: (jobId) => ipcRenderer.send(IPC.exportCancel, jobId),
+    onProgress: (cb) => subscribe<ExportProgress>(IPC.exportProgress, cb),
+    reveal: (path) => ipcRenderer.send(IPC.exportReveal, path),
+    open: (path) => ipcRenderer.send(IPC.exportOpen, path)
+  },
+  exportRunner: {
+    data: (jobId) => ipcRenderer.invoke(IPC.exportJobData, jobId),
+    begin: (jobId, modes) => ipcRenderer.invoke(IPC.exportBegin, jobId, modes),
+    decode: (req) => ipcRenderer.invoke(IPC.exportDecode, req),
+    pushFrame: (jobId, data) => ipcRenderer.invoke(IPC.exportPushFrame, jobId, data),
+    progress: (jobId, frame, thumb) => ipcRenderer.send(IPC.exportReport, jobId, frame, thumb),
+    finish: (jobId, timings) => ipcRenderer.invoke(IPC.exportFinish, jobId, timings),
+    fail: (jobId, message) => ipcRenderer.send(IPC.exportFail, jobId, message)
+  },
   app: {
     onMenuAction: (cb) => subscribe<string>(IPC.appMenuAction, cb),
     openExternal: (url) => ipcRenderer.send(IPC.appOpenExternal, url)

@@ -6,6 +6,7 @@ import { ProjectService } from './services/project-service'
 import { createMainWindow } from './windows'
 import { TransitionRegistry } from './services/transition-registry'
 import { IPC } from '@shared/ipc'
+import { ExportService } from './services/export-service'
 
 // userData = %APPDATA%/Viditor (Windows) · ~/.config/Viditor (Linux): ahí viven las transiciones del usuario
 app.setName('Viditor')
@@ -13,6 +14,7 @@ registerSchemes()
 
 const projects = new ProjectService()
 const registry = new TransitionRegistry(projects)
+const exporter = new ExportService(projects)
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -29,8 +31,10 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(null)
     setupSecurity()
     registerProtocolHandlers(projects)
-    registerIpc(projects, registry)
+    registerIpc(projects, registry, exporter)
     const win = createMainWindow()
+    // Cerrar la ventana principal cancela cualquier exportación en curso (su ventana oculta no debe mantener viva la app)
+    win.on('closed', () => exporter.dispose())
     registry.onChange = (list) => {
       if (!win.isDestroyed()) win.webContents.send(IPC.transitionsChanged, list)
     }
@@ -41,6 +45,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', () => {
+    exporter.dispose()
     void registry.dispose()
     app.quit()
   })

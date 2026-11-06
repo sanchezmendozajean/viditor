@@ -14,6 +14,8 @@ import { ImportService } from './services/import-service'
 import { computeWaveform, JobQueue, makeThumbnail } from './services/media-service'
 import { openExternalFromUserClick } from './security'
 import { openHelpWindow } from './windows'
+import type { ExportService } from './services/export-service'
+import { exportOptionsSchema } from '@shared/export-schema'
 
 function fail(e: unknown): { ok: false; error: string } {
   if (e instanceof ZodError) return { ok: false, error: `Datos inválidos: ${e.issues[0]?.path.join('.')} ${e.issues[0]?.message}` }
@@ -37,7 +39,7 @@ function windowOf(e: IpcMainInvokeEvent | Electron.IpcMainEvent): BrowserWindow 
   return BrowserWindow.fromWebContents(e.sender)
 }
 
-export function registerIpc(projects: ProjectService, registry: TransitionRegistry): void {
+export function registerIpc(projects: ProjectService, registry: TransitionRegistry, exporter: ExportService): void {
   const imports = new ImportService()
 
   ipcMain.on(IPC.windowMinimize, (e) => windowOf(e)?.minimize())
@@ -195,6 +197,57 @@ export function registerIpc(projects: ProjectService, registry: TransitionRegist
   ipcMain.handle(IPC.transitionsCopyToProject, (_e, ref: string) => guard(() => registry.copyToProject(String(ref))))
   ipcMain.on(IPC.transitionsOpenFolder, (_e, origin: string) => {
     if (origin === 'builtin' || origin === 'user' || origin === 'project') void registry.openFolder(origin)
+  })
+
+  // ───────── Exportación ─────────
+  ipcMain.handle(IPC.exportCaps, () => exporter.capabilities())
+  ipcMain.handle(IPC.exportDefaultOutput, (_e, name: string, ext: string) => exporter.defaultOutput(String(name), String(ext).replace(/[^a-z0-9]/gi, '')))
+  ipcMain.handle(IPC.exportChooseOutput, async (e, defaultPath: string, ext: string) => {
+    const w = windowOf(e)
+    const extension = String(ext).replace(/[^a-z0-9]/gi, '')
+    const opts: Electron.SaveDialogOptions = { defaultPath: String(defaultPath), filters: [{ name: extension.toUpperCase(), extensions: [extension] }] }
+    const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts)
+    return r.canceled ? null : (r.filePath ?? null)
+  })
+  ipcMain.handle(IPC.exportStart, (e, project: Project, options: unknown) =>
+    guard(async () => {
+      const jobId = await exporter.start(e.sender, projectSchema.parse(project), exportOptionsSchema.parse(options))
+      return { jobId }
+    })
+  )
+  ipcMain.on(IPC.exportCancel, (_e, jobId: string) => exporter.cancel(String(jobId)))
+  ipcMain.on(IPC.exportReveal, (_e, path: string) => {
+    if (existsSync(String(path))) shell.showItemInFolder(String(path))
+  })
+  ipcMain.on(IPC.exportOpen, (_e, path: string) => {
+    if (existsSync(String(path))) void shell.openPath(String(path))
+  })
+  ipcMain.handle(IPC.exportJobData, (e, jobId: string) => exporter.data(e.sender, String(jobId)))
+  ipcMain.handle(IPC.exportBegin, (e, jobId: string, modes: Record<string, 'crossfade' | 'cut' | 'none' | undefined>) =>
+    guard(() => exporter.begin(e.sender, String(jobId), modes ?? {}))
+  )
+  ipcMain.handle(IPC.exportDecode, (e, req) => guard(() => exporter.decode(e.sender, req)))
+  ipcMain.handle(IPC.exportPushFrame, (e, jobId: string, data: Uint8Array) =>
+    guard(async () => {
+      await exporter.pushFrame(e.sender, String(jobId), data)
+      return null
+    })
+  )
+  ipcMain.on(IPC.exportReport, (e, jobId: string, frame: number, thumb?: string) => {
+    try {
+      exporter.progress(e.sender, String(jobId), Number(frame), typeof thumb === 'string' ? thumb : undefined)
+    } catch {
+      /* trabajo ya terminado */
+    }
+  })
+  ipcMain.handle(IPC.exportFinish, (e, jobId: string, timings?: Record<string, number>) =>
+    guard(async () => {
+      await exporter.finish(e.sender, String(jobId), timings)
+      return null
+    })
+  )
+  ipcMain.on(IPC.exportFail, (e, jobId: string, message: string) => {
+    void exporter.failFromWindow(e.sender, String(jobId), String(message)).catch(() => undefined)
   })
 
   ipcMain.on(IPC.helpOpen, (_e, topic?: string) => openHelpWindow(typeof topic === 'string' ? topic : 'index'))

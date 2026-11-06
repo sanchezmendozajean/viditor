@@ -34,6 +34,8 @@
 | `V` / `C` / `H` | Herramienta selección / cuchilla / mano |
 | `S` | Activar o desactivar el imán |
 | `M` | Agregar marcador |
+| `I` / `O` | Marcar entrada / salida del rango de exportación |
+| `Ctrl+M` | Abrir el espacio de trabajo Exportar |
 | `←` `→` | Frame anterior / siguiente |
 | `↑` `↓` | Borde de clip anterior / siguiente |
 | `Home` / `End` | Ir al inicio / al fin |

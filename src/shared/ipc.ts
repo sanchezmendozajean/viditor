@@ -1,3 +1,5 @@
+import type { DecodedFrame, DecodeRequest, ExportCapabilities, ExportJobData, ExportOptions, ExportProgress } from './export-model'
+import type { AudioMode } from './transition-model'
 import type { ImportMode, MediaBin, MediaItem, Project, ProjectSettings } from './project-schema'
 
 export interface RecentProject {
@@ -128,6 +130,28 @@ export interface ViditorApi {
   help: {
     open(topic?: string): void
   }
+  export: {
+    capabilities(): Promise<ExportCapabilities>
+    defaultOutput(name: string, ext: string): Promise<string>
+    chooseOutput(defaultPath: string, ext: string): Promise<string | null>
+    start(project: Project, options: ExportOptions): Promise<IpcResult<{ jobId: string }>>
+    cancel(jobId: string): void
+    onProgress(cb: (p: ExportProgress) => void): () => void
+    /** Muestra el archivo en el explorador */
+    reveal(path: string): void
+    /** Abre el archivo con el reproductor del sistema */
+    open(path: string): void
+  }
+  /** Solo lo usa la ventana oculta de exportación */
+  exportRunner: {
+    data(jobId: string): Promise<ExportJobData>
+    begin(jobId: string, modes: Record<string, AudioMode | undefined>): Promise<IpcResult<{ encoder: string }>>
+    decode(req: DecodeRequest): Promise<IpcResult<DecodedFrame>>
+    pushFrame(jobId: string, data: Uint8Array): Promise<IpcResult<null>>
+    progress(jobId: string, frame: number, thumb?: string): void
+    finish(jobId: string, timings?: Record<string, number>): Promise<IpcResult<null>>
+    fail(jobId: string, message: string): void
+  }
   app: {
     onMenuAction(cb: (action: string) => void): () => void
     openExternal(url: string): void
@@ -164,6 +188,21 @@ export const IPC = {
   transitionsOpenFolder: 'transitions:open-folder',
   transitionsChanged: 'transitions:changed',
   helpOpen: 'help:open',
+  exportCaps: 'export:caps',
+  exportDefaultOutput: 'export:default-output',
+  exportChooseOutput: 'export:choose-output',
+  exportStart: 'export:start',
+  exportCancel: 'export:cancel',
+  exportProgress: 'export:progress',
+  exportReveal: 'export:reveal',
+  exportOpen: 'export:open',
+  exportJobData: 'export:job-data',
+  exportBegin: 'export:begin',
+  exportDecode: 'export:decode',
+  exportPushFrame: 'export:push-frame',
+  exportReport: 'export:report',
+  exportFinish: 'export:finish',
+  exportFail: 'export:fail',
   appMenuAction: 'app:menu-action',
   appOpenExternal: 'app:open-external'
 } as const

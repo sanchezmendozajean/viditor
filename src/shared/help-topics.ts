@@ -6,6 +6,7 @@ export const HELP_TOPICS = {
   timeline: '/guia/linea-de-tiempo',
   transitions: '/transiciones/primera-transicion',
   debugging: '/transiciones/depuracion',
+  export: '/guia/exportar',
   shortcuts: '/guia/atajos'
 } as const
 

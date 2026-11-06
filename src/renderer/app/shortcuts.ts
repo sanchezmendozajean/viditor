@@ -1,6 +1,7 @@
 import { engine } from '@/engine/engine'
 import { useProjectStore } from '@/stores/project'
 import { useTimelineStore } from '@/stores/timeline'
+import { useExportStore } from '@/stores/export'
 
 /** Atajos de la línea de tiempo (specs/04). Devuelve true si la tecla fue consumida. */
 export function handleTimelineKey(e: KeyboardEvent): boolean {
@@ -46,6 +47,8 @@ export function handleTimelineKey(e: KeyboardEvent): boolean {
     case 'h': tl.tool = 'hand'; return true
     case 's': tl.snap = !tl.snap; return true
     case 'm': tl.addMarker(); return true
+    case 'i': useExportStore().setIn(tl.playhead); return true
+    case 'o': useExportStore().setOut(tl.playhead); return true
     case 'q': tl.trimToPlayhead('start'); return true
     case 'w': tl.trimToPlayhead('end'); return true
     case 'e': // Mayús+E

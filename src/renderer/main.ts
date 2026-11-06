@@ -6,4 +6,10 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './app/App.vue'
 
-createApp(App).use(createPinia()).mount('#app')
+// La ventana oculta de exportación (#export=<id>) usa el mismo motor pero no monta la interfaz.
+const exportJob = /^#export=([\w-]+)$/.exec(location.hash)?.[1]
+if (exportJob) {
+  void import('./export/runner').then((m) => m.runExport(exportJob))
+} else {
+  createApp(App).use(createPinia()).mount('#app')
+}

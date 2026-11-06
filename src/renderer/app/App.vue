@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, watch } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { useUiStore } from '@/stores/ui'
 import { useTransitionsStore } from '@/stores/transitions'
+import { useExportStore } from '@/stores/export'
 import TitleBar from './components/TitleBar.vue'
 import StatusBar from './components/StatusBar.vue'
 import StartScreen from './StartScreen.vue'
@@ -26,6 +27,10 @@ function onKey(e: KeyboardEvent): void {
   } else if (mod && e.key.toLowerCase() === 's' && project.isOpen) {
     e.preventDefault()
     void project.save()
+  } else if (mod && e.key.toLowerCase() === 'm' && project.isOpen) {
+    e.preventDefault()
+    ui.workspace = 'export'
+    project.mutate((p) => (p.view.workspace = 'export'))
   } else if (mod && e.key.toLowerCase() === 'n') {
     e.preventDefault()
     ui.newProjectOpen = true
@@ -44,7 +49,7 @@ const stopDrop = (e: DragEvent): void => e.preventDefault()
 
 onMounted(() => {
   void useTransitionsStore().start()
-  void useTransitionsStore().start()
+  useExportStore().listen()
   offTask = window.viditor.media.onTask((t) => ui.onTask(t))
   // Un proxy H.264 terminó: el medio pasa a reproducirse desde él (el original no se toca).
   offProxy = window.viditor.media.onProxyReady(({ mediaId, path }) => {

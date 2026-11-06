@@ -11,6 +11,8 @@ import InspectorPanel from './panels/InspectorPanel.vue'
 import PlaceholderPanel from './panels/PlaceholderPanel.vue'
 import MetersPanel from './panels/MetersPanel.vue'
 import MixerPanel from './panels/MixerPanel.vue'
+import ExportPanel from './panels/ExportPanel.vue'
+import ExportQueue from './panels/ExportQueue.vue'
 import { useTimelineStore } from '@/stores/timeline'
 import TimelinePanel from './timeline/TimelinePanel.vue'
 import Panel from './components/Panel.vue'
@@ -99,12 +101,12 @@ function setWorkspace(id: (typeof WORKSPACES)[number]['id']): void {
     <!-- Exportar -->
     <div v-else class="cols">
       <div class="row top">
-        <div class="pane" :style="{ width: size.left + 'px' }"><PlaceholderPanel title="Exportar" hint="Formulario de exportación (fase 5)." /></div>
+        <div class="pane" :style="{ width: Math.max(size.left, 360) + 'px' }"><ExportPanel /></div>
         <Splitter dir="row" @drag="size.left = clamp(size.left + $event, 220, 640)" />
         <div class="pane flex"><MonitorPanel /></div>
       </div>
       <Splitter dir="column" @drag="size.console = clamp(size.console - $event, 80, 400)" />
-      <div class="row" :style="{ height: size.console + 'px' }"><div class="pane flex"><PlaceholderPanel title="Cola de exportación" hint="Sin exportaciones." /></div></div>
+      <div class="row" :style="{ height: size.console + 'px' }"><div class="pane flex"><ExportQueue /></div></div>
     </div>
   </div>
 </template>
