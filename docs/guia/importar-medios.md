@@ -4,6 +4,8 @@ Arrastra archivos o carpetas al panel **Proyecto**, o usa **Archivo › Importar
 
 ## Dejar, copiar o mover
 
+![Diálogo de importación con las tres opciones: dejar, copiar o mover](/capturas/importar-opciones.png)
+
 Cuando un archivo está fuera de la carpeta del proyecto, Viditor pregunta qué hacer:
 
 | Opción | Efecto |
@@ -19,6 +21,10 @@ Si el nombre ya existe en `media/`, se agrega un sufijo: `clip (2).mp4`, `clip (
 ## Carpetas
 
 Las carpetas se importan recursivamente y crean una **bandeja** con su nombre en el panel Proyecto.
+
+## Revincular medios faltantes
+
+Si un archivo ya no está en su sitio, el medio aparece con una alerta roja. Pulsa **Revincular…**, elige el archivo y Viditor revinculará también los demás faltantes que estén en esa carpeta. Más detalles en [Solución de problemas](/guia/solucion-de-problemas).
 
 ## Tras importar
 

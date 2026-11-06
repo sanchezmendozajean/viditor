@@ -73,7 +73,8 @@ function onDragStart(e: DragEvent, m: MediaItem): void {
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
 }
 function append(m: MediaItem): void {
-  useTimelineStore().addMedia(m.id)
+  if (isMissing(m)) void project.relink(m.id)
+  else useTimelineStore().addMedia(m.id)
 }
 
 function onDrop(e: DragEvent): void {
@@ -98,6 +99,11 @@ function onDrop(e: DragEvent): void {
         <template v-for="c in breadcrumb" :key="c.id ?? 'root'"> / <a @click="currentBin = c.id">{{ c.name }}</a></template>
       </div>
 
+      <div v-if="project.missing.length" class="warn" data-testid="missing-banner">
+        <Icon name="alert" :size="13" /> Faltan {{ project.missing.length }} archivo(s) de medios.
+        <a @click="project.relink(project.missing[0] as string)">Revincular…</a>
+      </div>
+
       <div v-if="bins.length === 0 && items.length === 0" class="empty" data-testid="media-empty">
         <Icon name="download" :size="28" />
         <p>Arrastra videos, audio o imágenes aquí<br /><span class="dim">o usa Archivo › Importar…</span></p>
@@ -111,7 +117,8 @@ function onDrop(e: DragEvent): void {
           <div class="thumb">
             <img v-if="m.kind !== 'audio'" :src="thumb(m)" alt="" draggable="false" @error="hideBroken" @load="showLoaded" />
             <Icon v-else name="music" :size="28" />
-            <span class="badge" :title="badge(m).title"><Icon :name="badge(m).icon" :size="12" /></span>
+            <span class="badge" :class="{ missing: isMissing(m) }" :title="badge(m).title"><Icon :name="badge(m).icon" :size="12" /></span>
+            <button v-if="isMissing(m)" class="relink" data-testid="relink" title="Localizar el archivo" @click.stop="project.relink(m.id)" @dblclick.stop>Revincular…</button>
             <span class="dur mono">{{ duration(m) }}</span>
           </div>
           <span class="name">{{ fileName(m) }}</span>
@@ -123,7 +130,7 @@ function onDrop(e: DragEvent): void {
         <tbody>
           <tr v-for="b in bins" :key="b.id" @dblclick="currentBin = b.id"><td colspan="6"><Icon name="folder" :size="13" /> {{ b.name }}</td></tr>
           <tr v-for="m in items" :key="m.id" data-testid="media-row" draggable="true" @dragstart="onDragStart($event, m)" @dragend="ui.dragMediaId = null" @dblclick="append(m)">
-            <td><Icon :name="badge(m).icon" :size="12" /> {{ fileName(m) }}</td>
+            <td><Icon :name="badge(m).icon" :size="12" /> {{ fileName(m) }} <button v-if="isMissing(m)" class="relink inline" data-testid="relink" @click.stop="project.relink(m.id)">Revincular…</button></td>
             <td class="mono">{{ duration(m) }}</td><td>{{ resolution(m) }}</td><td>{{ fps(m) }}</td>
             <td>{{ m.probe?.videoCodec ?? m.probe?.audioCodec ?? '—' }}</td><td class="dim">{{ m.storage === 'project' ? 'Proyecto' : m.path }}</td>
           </tr>
@@ -140,6 +147,8 @@ function onDrop(e: DragEvent): void {
 .search { flex: 1; display: flex; align-items: center; gap: 4px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius); padding-left: 6px; }
 .search input { flex: 1; min-width: 0; background: none; border: 0; padding: 3px 4px; font-size: 11px; }
 .icon-btn.on { color: var(--accent); }
+.warn { margin: 0 6px 4px; padding: 4px 8px; border: 1px solid var(--danger); border-radius: var(--radius); color: var(--text); display: flex; gap: 6px; align-items: center; }
+.warn a { margin-left: auto; color: var(--accent); cursor: pointer; }
 .crumbs { padding: 0 8px 4px; color: var(--text-dim); }
 .crumbs a { cursor: pointer; color: var(--accent); }
 .empty { flex: 1; display: grid; place-content: center; justify-items: center; text-align: center; color: var(--text-dim); gap: 4px; padding: 24px; }
@@ -150,6 +159,9 @@ function onDrop(e: DragEvent): void {
 .thumb { position: relative; aspect-ratio: 16 / 9; background: #111; display: grid; place-items: center; color: var(--clip-audio); overflow: hidden; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; }
 .badge { position: absolute; left: 3px; top: 3px; color: #fff; background: #000a; border-radius: 2px; padding: 1px 2px; display: flex; }
+.badge.missing { background: var(--danger); }
+.relink { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--danger); color: #fff; border: 0; border-radius: var(--radius); padding: 2px 8px; font-size: 10px; cursor: pointer; white-space: nowrap; }
+.relink.inline { position: static; transform: none; margin-left: 6px; }
 .dur { position: absolute; right: 3px; bottom: 3px; font-size: 10px; background: #000b; padding: 0 3px; border-radius: 2px; }
 .name { font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list { width: 100%; border-collapse: collapse; font-size: 10px; }

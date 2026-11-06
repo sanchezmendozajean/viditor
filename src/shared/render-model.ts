@@ -4,6 +4,7 @@
  * Orden de aplicación: crop → ajuste (fit) → escala → volteo → rotación (sobre el anclaje) → traslación → opacidad.
  */
 import type { Clip, MediaItem, Project, ProjectSettings, Track } from './project-schema'
+import { resolveClip, valueAt } from './keyframes'
 import { clipEnd } from './timeline-ops'
 import { transitionAt, transitionAudioFactor, transitionTiming, type AudioMode } from './transition-model'
 
@@ -164,7 +165,8 @@ export function activeClipsAt(p: Project, t: number): { clip: Clip; track: Track
   return out
 }
 
-function drawOpFor(p: Project, clip: Clip, media: MediaItem, t: number): DrawOp {
+function drawOpFor(p: Project, source: Clip, media: MediaItem, t: number): DrawOp {
+  const clip = resolveClip(source, t)
   const g = clipGeometry(p.settings, clip, media)
   const c = clip.transform.crop
   const u0 = c.left / g.sw
@@ -238,7 +240,7 @@ export function clipGainAt(clip: Clip, t: number): number {
   if (clip.audio.muted || !clip.enabled) return 0
   const dur = clipEnd(clip) - clip.start
   const local = t - clip.start
-  let g = clip.audio.volume
+  let g = valueAt(clip, 'volume', t)
   if (clip.audio.fadeIn > 0 && local < clip.audio.fadeIn) g *= Math.max(0, local / clip.audio.fadeIn)
   const toEnd = dur - local
   if (clip.audio.fadeOut > 0 && toEnd < clip.audio.fadeOut) g *= Math.max(0, toEnd / clip.audio.fadeOut)

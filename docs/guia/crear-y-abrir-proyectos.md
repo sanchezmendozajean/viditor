@@ -1,5 +1,8 @@
 # Crear y abrir proyectos
 
+![Pantalla de inicio de Viditor con los proyectos recientes](/capturas/inicio.png)
+
+
 ## Nuevo proyecto
 
 Elige **Archivo › Nuevo proyecto…** (`Ctrl+N`) o el botón de la pantalla de inicio. Define nombre, ubicación, resolución, fotogramas por segundo, frecuencia de audio, color de fondo y qué hacer al importar medios.

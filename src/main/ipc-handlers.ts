@@ -1,4 +1,5 @@
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { sanitizeFileName } from './services/paths'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
@@ -11,6 +12,8 @@ import { ensureProxies } from './services/proxy-service'
 import type { TransitionRegistry } from './services/transition-registry'
 import type { MediaItem } from '@shared/project-schema'
 import { ImportService } from './services/import-service'
+import { planRelink } from './services/relink'
+import type { PrefsService } from './services/prefs-service'
 import { computeWaveform, JobQueue, makeThumbnail } from './services/media-service'
 import { openExternalFromUserClick } from './security'
 import { openHelpWindow } from './windows'
@@ -39,7 +42,7 @@ function windowOf(e: IpcMainInvokeEvent | Electron.IpcMainEvent): BrowserWindow 
   return BrowserWindow.fromWebContents(e.sender)
 }
 
-export function registerIpc(projects: ProjectService, registry: TransitionRegistry, exporter: ExportService): void {
+export function registerIpc(projects: ProjectService, registry: TransitionRegistry, exporter: ExportService, prefs: PrefsService, pendingFile: { take(): string | null }): void {
   const imports = new ImportService()
 
   ipcMain.on(IPC.windowMinimize, (e) => windowOf(e)?.minimize())
@@ -185,6 +188,39 @@ export function registerIpc(projects: ProjectService, registry: TransitionRegist
     if (existsSync(abs)) shell.showItemInFolder(abs)
   })
 
+  ipcMain.handle(IPC.prefsGet, () => prefs.get())
+  ipcMain.handle(IPC.prefsSet, (e, partial: unknown) =>
+    guard(async () => {
+      const before = prefs.get().transitionsDir
+      const next = await prefs.set(partial)
+      if (next.transitionsDir !== before) {
+        // La carpeta de transiciones del usuario cambió: se vigila la nueva y se refresca la lista
+        await registry.watch()
+        if (!e.sender.isDestroyed()) e.sender.send(IPC.transitionsChanged, await registry.list())
+      }
+      return next
+    })
+  )
+  ipcMain.handle(IPC.appPendingFile, () => pendingFile.take())
+
+  ipcMain.handle(IPC.mediaRelink, (e, target: { id: string; path: string }, missing: { id: string; path: string }[]) =>
+    guard(async () => {
+      const dir = projects.dir
+      if (!dir) throw new Error('No hay un proyecto abierto.')
+      const first = { id: String(target.id), path: String(target.path) }
+      const w = windowOf(e)
+      const opts: Electron.OpenDialogOptions = { title: `Localizar «${basename(first.path)}»`, properties: ['openFile'] }
+      const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+      const chosen = r.canceled ? null : (r.filePaths[0] ?? null)
+      if (!chosen) return null
+      const list = (Array.isArray(missing) ? missing : []).map((m) => ({ id: String(m.id), path: String(m.path) }))
+      const result = planRelink(dir, first, chosen, list, existsSync)
+      // El índice de medios del protocolo viditor-media:// se actualiza ya, sin esperar a guardar
+      projects.addMedia(result.map((m) => ({ id: m.id, path: m.path })))
+      return result
+    })
+  )
+
   ipcMain.handle(IPC.transitionsList, () => registry.list())
   ipcMain.handle(IPC.transitionsSave, (_e, ref: string, source: string) =>
     guard(async () => {
@@ -213,6 +249,24 @@ export function registerIpc(projects: ProjectService, registry: TransitionRegist
     guard(async () => {
       const jobId = await exporter.start(e.sender, projectSchema.parse(project), exportOptionsSchema.parse(options))
       return { jobId }
+    })
+  )
+  ipcMain.handle(IPC.exportSaveFrame, (e, name: string, png: Uint8Array) =>
+    guard(async () => {
+      const dir = projects.dir
+      if (!dir) throw new Error('No hay un proyecto abierto.')
+      if (!(png instanceof Uint8Array) || png.byteLength < 8 || png.byteLength > 256 * 1024 * 1024) throw new Error('Imagen inválida.')
+      const w = windowOf(e)
+      const opts: Electron.SaveDialogOptions = {
+        title: 'Exportar fotograma',
+        defaultPath: join(dir, 'renders', `${sanitizeFileName(String(name))}.png`),
+        filters: [{ name: 'PNG', extensions: ['png'] }]
+      }
+      const r = w ? await dialog.showSaveDialog(w, opts) : await dialog.showSaveDialog(opts)
+      if (r.canceled || !r.filePath) return null
+      await mkdir(dirname(r.filePath), { recursive: true })
+      await writeFile(r.filePath, png)
+      return r.filePath
     })
   )
   ipcMain.on(IPC.exportCancel, (_e, jobId: string) => exporter.cancel(String(jobId)))

@@ -249,7 +249,7 @@ const cursorFor = (hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (h
 </script>
 
 <template>
-  <Panel title="Monitor del programa">
+  <Panel title="Monitor del programa" help="monitor">
     <div class="monitor">
       <div class="stage">
         <div class="frame" :style="{ '--ratio': ratio }" data-testid="monitor-frame">

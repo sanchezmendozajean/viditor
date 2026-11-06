@@ -2,6 +2,8 @@
 
 En Viditor las transiciones son archivos de JavaScript que **tú** escribes. En unos minutos tendrás una propia funcionando en la línea de tiempo.
 
+![Espacio Transiciones: lista, editor de código, vista previa y consola](/capturas/transiciones.png)
+
 ## 1. Crear la transición
 
 1. Abre el espacio de trabajo **Transiciones** (pestaña superior).

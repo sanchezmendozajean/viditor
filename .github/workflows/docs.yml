@@ -16,6 +16,12 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+# Versionado (specs/09 §Publicación): la raíz del sitio es la última release (etiqueta v*) y `main` se publica en /next/.
+# Sin ninguna release todavía, la raíz sirve también `main`.
+env:
+  SITE_OWNER: ${{ github.repository_owner }}
+  SITE_REPO: ${{ github.event.repository.name }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -24,12 +30,43 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci
-      # docs:build:pages ya ejecuta docs:api (TypeDoc → docs/api)
-      - run: npm run docs:build:pages
+
+      - name: Compilar main → /next/
+        env:
+          VITEPRESS_BASE: /${{ env.SITE_REPO }}/next/
+          VITEPRESS_VERSION: next
+          VITEPRESS_SITE: https://${{ env.SITE_OWNER }}.github.io/${{ env.SITE_REPO }}/
+        # docs:build:pages ya ejecuta docs:api (TypeDoc → docs/api)
+        run: |
+          npm run docs:build:pages
+          mkdir -p site
+          mv docs/.vitepress/dist site/next
+
+      - name: Compilar la última release → raíz
+        env:
+          VITEPRESS_SITE: https://${{ env.SITE_OWNER }}.github.io/${{ env.SITE_REPO }}/
+        run: |
+          tag="$(git tag --list 'v*' --sort=-v:refname | head -n1)"
+          export VITEPRESS_BASE="/${SITE_REPO}/"
+          if [ -n "$tag" ]; then
+            echo "Última release: $tag"
+            export VITEPRESS_VERSION="${tag#v}"
+            git worktree add ../release-src "$tag"
+            (cd ../release-src && npm ci && npm run docs:build:pages)
+            cp -r ../release-src/docs/.vitepress/dist/. site/
+          else
+            echo "Aún no hay releases: la raíz sirve main"
+            export VITEPRESS_VERSION=next
+            rm -rf docs/.vitepress/dist
+            npm run docs:build:pages
+            cp -r docs/.vitepress/dist/. site/
+          fi
+
       - uses: actions/upload-pages-artifact@v3
-        with: { path: docs/.vitepress/dist }
+        with: { path: site }
       - id: deployment
         uses: actions/deploy-pages@v4

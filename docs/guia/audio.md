@@ -1,5 +1,8 @@
 # Audio y mezclador
 
+![Espacio Audio con el mezclador y los medidores](/capturas/audio.png)
+
+
 ## Tres niveles de volumen
 
 El volumen que se oye es el producto de tres niveles:

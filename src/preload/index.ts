@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import type { ExportProgress } from '../shared/export-model'
 import { IPC, type BackgroundTask, type TransitionFile, type ViditorApi } from '../shared/ipc'
 
@@ -38,6 +38,7 @@ const api: ViditorApi = {
     pathForFile: (file) => webUtils.getPathForFile(file),
     waveform: (mediaId, path) => ipcRenderer.invoke(IPC.mediaWaveform, mediaId, path),
     reveal: (path) => ipcRenderer.send(IPC.mediaReveal, path),
+    relink: (target, missing) => ipcRenderer.invoke(IPC.mediaRelink, target, missing),
     onTask: (cb) => subscribe<BackgroundTask>(IPC.mediaTask, cb),
     onProxyReady: (cb) => subscribe<{ mediaId: string; path: string }>(IPC.mediaProxyReady, cb),
     sourceUrl: (mediaId, proxy) => `viditor-media://${proxy ? 'proxy' : 'file'}/${encodeURIComponent(mediaId)}`
@@ -60,7 +61,8 @@ const api: ViditorApi = {
     cancel: (jobId) => ipcRenderer.send(IPC.exportCancel, jobId),
     onProgress: (cb) => subscribe<ExportProgress>(IPC.exportProgress, cb),
     reveal: (path) => ipcRenderer.send(IPC.exportReveal, path),
-    open: (path) => ipcRenderer.send(IPC.exportOpen, path)
+    open: (path) => ipcRenderer.send(IPC.exportOpen, path),
+    saveFrame: (name, png) => ipcRenderer.invoke(IPC.exportSaveFrame, name, png)
   },
   exportRunner: {
     data: (jobId) => ipcRenderer.invoke(IPC.exportJobData, jobId),
@@ -71,7 +73,14 @@ const api: ViditorApi = {
     finish: (jobId, timings) => ipcRenderer.invoke(IPC.exportFinish, jobId, timings),
     fail: (jobId, message) => ipcRenderer.send(IPC.exportFail, jobId, message)
   },
+  prefs: {
+    get: () => ipcRenderer.invoke(IPC.prefsGet),
+    set: (partial) => ipcRenderer.invoke(IPC.prefsSet, partial),
+    applyScale: (percent) => webFrame.setZoomFactor(Math.min(1.5, Math.max(0.9, Number(percent) / 100)))
+  },
   app: {
+    takePendingFile: () => ipcRenderer.invoke(IPC.appPendingFile),
+    onOpenFile: (cb) => subscribe<string>(IPC.appOpenFile, cb),
     onMenuAction: (cb) => subscribe<string>(IPC.appMenuAction, cb),
     openExternal: (url) => ipcRenderer.send(IPC.appOpenExternal, url)
   }

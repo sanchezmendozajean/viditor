@@ -18,6 +18,7 @@ import TimelinePanel from './timeline/TimelinePanel.vue'
 import Panel from './components/Panel.vue'
 import TransitionsList from './transitions/TransitionsList.vue'
 import TransitionsWorkspace from './transitions/TransitionsWorkspace.vue'
+import { shortcutLabel } from './commands'
 
 const ui = useUiStore()
 const tlStore = useTimelineStore()
@@ -65,7 +66,7 @@ function setWorkspace(id: (typeof WORKSPACES)[number]['id']): void {
         {{ w.label }}
       </button>
       <div class="grow" />
-      <div class="cmd"><Icon name="search" :size="13" /> Buscar comando <span class="dim">Ctrl+Shift+P</span></div>
+      <button class="cmd" data-testid="open-palette" title="Paleta de comandos" @click="ui.paletteOpen = true"><Icon name="search" :size="13" /> Buscar comando <span class="dim">{{ shortcutLabel('app.palette') }}</span></button>
     </div>
 
     <!-- Edición -->
@@ -118,7 +119,7 @@ function setWorkspace(id: (typeof WORKSPACES)[number]['id']): void {
 .ws:hover { color: var(--text); }
 .ws.active { color: var(--text); border-bottom-color: var(--accent); }
 .grow { flex: 1; }
-.cmd { display: flex; align-items: center; gap: 6px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius); padding: 2px 10px; color: var(--text-dim); }
+.cmd { cursor: pointer; font: inherit; display: flex; align-items: center; gap: 6px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius); padding: 2px 10px; color: var(--text-dim); }
 .cols { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 0 4px 4px; background: var(--bg-app); }
 .row { display: flex; min-height: 0; flex: none; }
 .row.top { flex: 1; }

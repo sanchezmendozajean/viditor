@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Clip, MediaItem, Track } from '@shared/project-schema'
+import { keyTimes, timelineTimeOf } from '@shared/keyframes'
 import { clipDuration } from '@shared/timeline-ops'
 import { useUiStore } from '@/stores/ui'
 import { useWaveStore } from '@/stores/waves'
@@ -29,6 +30,12 @@ const kindClass = computed(() => {
   if (props.track.kind === 'audio') return 'audio'
   return props.media?.kind === 'image' ? 'image' : 'video'
 })
+// Rombos de los fotogramas clave dentro del clip (posición relativa al inicio del clip)
+const keyMarks = computed(() =>
+  keyTimes(props.clip)
+    .map((s) => (timelineTimeOf(props.clip, s) - props.clip.start) * props.zoom)
+    .filter((x) => x >= 0 && x <= width.value)
+)
 const wave = computed(() => (props.media ? waves.get(props.media.id) : null))
 const thumb = computed(() => {
   if (props.track.kind !== 'video' || !props.media || props.media.kind === 'audio') return undefined
@@ -69,6 +76,7 @@ function onMove(e: PointerEvent): void {
     <div v-if="wave" class="wavebox" :class="{ small: track.kind === 'video' }">
       <ClipWave :wave="wave" :in-point="clip.in" :out-point="clip.out" :width="width" :height="track.kind === 'video' ? 22 : height - 14" :color="waveColor" />
     </div>
+    <i v-for="(x, i) in keyMarks" :key="i" class="kf" :style="{ left: x + 'px' }" data-testid="clip-key" />
     <span class="name">{{ clip.name }}</span>
     <span v-if="clip.audio.muted && track.kind === 'video'" class="muted" title="Audio separado">♪̸</span>
   </div>
@@ -87,4 +95,5 @@ function onMove(e: PointerEvent): void {
 .wavebox { position: absolute; left: 0; right: 0; top: 13px; bottom: 0; }
 .wavebox.small { top: auto; height: 22px; bottom: 0; background: rgba(0, 0, 0, 0.3); }
 .muted { position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: #fff; opacity: 0.8; }
+.kf { position: absolute; bottom: 2px; width: 7px; height: 7px; margin-left: -3.5px; transform: rotate(45deg); background: var(--marker); border: 1px solid rgba(0, 0, 0, 0.6); pointer-events: none; }
 </style>

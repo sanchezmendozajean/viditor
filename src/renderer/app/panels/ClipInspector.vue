@@ -1,18 +1,32 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
 import type { Clip } from '@shared/project-schema'
+import { KEY_PROPS, clearKeys, resolveClip, sourceTimeAt, keyAt } from '@shared/keyframes'
 import { clipGeometry, gainToDb } from '@shared/render-model'
 import { clipDuration } from '@shared/timeline-ops'
 import { useProjectStore } from '@/stores/project'
 import { useTimelineStore } from '@/stores/timeline'
 import ScrubNumber from '../components/ScrubNumber.vue'
 import Icon from '../components/Icon.vue'
+import KeyToggle from '../components/KeyToggle.vue'
 
 const project = useProjectStore()
 const tl = useTimelineStore()
 const open = reactive({ motion: true, opacity: true, audio: true })
 
-const clip = computed<Clip | undefined>(() => tl.selectedClips[0])
+const selected = computed<Clip | undefined>(() => tl.selectedClips[0])
+// Valores vistos en el cabezal: con fotogramas clave el inspector muestra el valor animado de ese instante
+const clip = computed<Clip | undefined>(() => (selected.value ? resolveClip(selected.value, tl.playhead) : undefined))
+const easeHere = computed(() => {
+  const c = selected.value
+  if (!c) return null
+  const s = sourceTimeAt(c, tl.playhead)
+  for (const p of KEY_PROPS) {
+    const k = keyAt(c, p, s)
+    if (k) return k.ease
+  }
+  return null
+})
 const media = computed(() => project.project?.media.find((m) => m.id === clip.value?.mediaId))
 const geo = computed(() => (clip.value && project.project ? clipGeometry(project.project.settings, clip.value, media.value) : null))
 const t = computed(() => clip.value?.transform)
@@ -92,15 +106,22 @@ function setAnchor(ax: number, ay: number): void {
 }
 function resetMotion(): void {
   tl.editSelected('Restablecer movimiento', (c) => {
+    clearKeys(c, ['x', 'y', 'scaleX', 'scaleY', 'rotation'], 0)
     Object.assign(c.transform, { fit: 'fit', x: 0, y: 0, scaleX: 1, scaleY: 1, lockAspect: true, rotation: 0, flipH: false, flipV: false, anchorX: 0.5, anchorY: 0.5 })
     c.transform.crop = { left: 0, top: 0, right: 0, bottom: 0 }
   })
 }
 function resetOpacity(): void {
-  tl.editSelected('Restablecer opacidad', (c) => (c.transform.opacity = 1))
+  tl.editSelected('Restablecer opacidad', (c) => {
+    clearKeys(c, ['opacity'], 0)
+    c.transform.opacity = 1
+  })
 }
 function resetAudio(): void {
-  tl.editSelected('Restablecer audio', (c) => (c.audio = { volume: 1, muted: false, fadeIn: 0, fadeOut: 0 }))
+  tl.editSelected('Restablecer audio', (c) => {
+    clearKeys(c, ['volume'], 0)
+    c.audio = { volume: 1, muted: false, fadeIn: 0, fadeOut: 0 }
+  })
 }
 const cropKeys = [
   ['left', 'Izq.'],
@@ -114,6 +135,15 @@ const cropKeys = [
   <div v-if="clip && t && geo" class="insp" data-testid="inspector-clip">
     <h3>{{ tl.selection.length > 1 ? `${tl.selection.length} clips` : clip.name }}</h3>
 
+    <div v-if="easeHere" class="ease" data-testid="key-ease">
+      <span class="dim">Interpolación desde este fotograma</span>
+      <select :value="easeHere" @change="tl.setKeyEase([...KEY_PROPS], ($event.target as HTMLSelectElement).value as 'linear' | 'smooth' | 'hold')">
+        <option value="linear">Lineal</option>
+        <option value="smooth">Suave</option>
+        <option value="hold">Mantener</option>
+      </select>
+    </div>
+
     <!-- Movimiento -->
     <section>
       <header @click="open.motion = !open.motion">
@@ -126,13 +156,13 @@ const cropKeys = [
           <option v-for="f in fits" :key="f.v" :value="f.v">{{ f.label }}</option>
         </select>
 
-        <label>Posición</label>
+        <label>Posición<KeyToggle :keys="['x', 'y']" /></label>
         <div class="pair">
           <ScrubNumber :model-value="t.x" :decimals="1" data-testid="pos-x" @start="start" @update:model-value="live((c) => (c.transform.x = $event))" @end="end('Cambiar posición')" />
           <ScrubNumber :model-value="t.y" :decimals="1" data-testid="pos-y" @start="start" @update:model-value="live((c) => (c.transform.y = $event))" @end="end('Cambiar posición')" />
         </div>
 
-        <label>Ancho / Alto</label>
+        <label>Ancho / Alto<KeyToggle :keys="['scaleX', 'scaleY']" /></label>
         <div class="pair">
           <ScrubNumber :model-value="geo.bw" :decimals="1" :min="1" data-testid="width" @start="start" @update:model-value="setWidth" @end="end('Cambiar tamaño')" />
           <button class="icon-btn lock" :class="{ on: t.lockAspect }" :title="t.lockAspect ? 'Proporción bloqueada' : 'Proporción libre'" data-testid="lock-aspect" @click="tl.editSelected('Bloquear proporción', (c) => (c.transform.lockAspect = !c.transform.lockAspect))">
@@ -142,11 +172,11 @@ const cropKeys = [
         </div>
 
         <template v-if="t.lockAspect">
-          <label>Escala</label>
+          <label>Escala<KeyToggle :keys="['scaleX', 'scaleY']" /></label>
           <ScrubNumber :model-value="t.scaleX * 100" :decimals="1" :min="0.1" :max="1000" suffix=" %" data-testid="scale" @start="start" @update:model-value="setScale" @end="end('Cambiar escala')" />
         </template>
 
-        <label>Rotación</label>
+        <label>Rotación<KeyToggle :keys="['rotation']" /></label>
         <ScrubNumber :model-value="t.rotation" :decimals="1" suffix="°" data-testid="rotation" @start="start" @update:model-value="live((c) => (c.transform.rotation = $event))" @end="end('Cambiar rotación')" />
 
         <label>Voltear</label>
@@ -185,7 +215,7 @@ const cropKeys = [
         <button class="icon-btn reset" title="Restablecer opacidad" @click.stop="resetOpacity">↺</button>
       </header>
       <div v-if="open.opacity" class="grid" data-testid="group-opacity">
-        <label>Opacidad</label>
+        <label>Opacidad<KeyToggle :keys="['opacity']" /></label>
         <div class="pair">
           <input class="range" type="range" min="0" max="100" :value="Math.round(t.opacity * 100)" data-testid="opacity-range" @pointerdown="start" @input="live((c) => (c.transform.opacity = Number(($event.target as HTMLInputElement).value) / 100))" @change="end('Cambiar opacidad')" />
           <ScrubNumber :model-value="t.opacity * 100" :decimals="0" :min="0" :max="100" suffix=" %" data-testid="opacity" @start="start" @update:model-value="live((c) => (c.transform.opacity = $event / 100))" @end="end('Cambiar opacidad')" />
@@ -201,7 +231,7 @@ const cropKeys = [
       </header>
       <div v-if="open.audio" class="grid" data-testid="group-audio">
         <template v-if="hasAudio">
-          <label>Volumen</label>
+          <label>Volumen<KeyToggle :keys="['volume']" /></label>
           <div class="pair">
             <ScrubNumber :model-value="clip.audio.volume * 100" :decimals="0" :min="0" :max="200" suffix=" %" data-testid="volume" @start="start" @update:model-value="live((c) => (c.audio.volume = $event / 100))" @end="end('Cambiar volumen del clip')" />
             <span class="dim db mono" data-testid="volume-db">{{ db }}</span>
@@ -227,7 +257,9 @@ header { display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 
 .fx { font-style: italic; color: var(--accent); font-weight: 600; width: 14px; }
 .title { flex: 1; font-weight: 600; }
 .reset { font-size: 13px; width: 20px; }
-.grid { display: grid; grid-template-columns: 78px 1fr; gap: 5px 8px; padding: 8px 10px; align-items: center; }
+.ease { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 10px; }
+.ease select { width: 90px; }
+.grid { display: grid; grid-template-columns: 96px 1fr; gap: 5px 8px; padding: 8px 10px; align-items: center; }
 label { color: var(--text-dim); }
 .pair { display: flex; align-items: center; gap: 4px; }
 .pair > * { flex: 1; min-width: 0; }

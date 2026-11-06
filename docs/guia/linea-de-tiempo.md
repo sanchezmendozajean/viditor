@@ -1,5 +1,8 @@
 # Línea de tiempo
 
+![Espacio de edición: biblioteca, monitor, inspector y línea de tiempo con una transición, un marcador y fotogramas clave](/capturas/edicion.png)
+
+
 La línea de tiempo muestra las pistas de **video** (arriba) y de **audio** (abajo). Un proyecto nuevo trae **V1, V2, A1 y A2**. Las pistas de video contienen el audio de sus clips.
 
 ## Agregar clips
@@ -47,5 +50,9 @@ Todo cambio es un comando: `Ctrl+Z` deshace y `Ctrl+Shift+Z` (o `Ctrl+Y`) rehace
 | Zoom | `Alt`+rueda, `+` / `-`, `\` ajusta todo |
 | Herramientas | `V` selección, `C` cuchilla, `H` mano |
 | Imán | `S` |
+
+## Marcadores
+
+`M` agrega un marcador en el cabezal (aparece como una banderita amarilla en la regla). **Doble clic** sobre un marcador para ponerle nombre; **clic derecho** para ir a él, renombrarlo, cambiarle el color o eliminarlo. Los comandos *Ir al marcador anterior / siguiente* están en la paleta (`Ctrl+Mayús+P`) y en el menú **Secuencia**. Los marcadores también hacen de imán al mover y recortar clips.
 
 Arrastra sobre la regla para mover el cabezal. El timecode usa el formato `HH:MM:SS:FF`.

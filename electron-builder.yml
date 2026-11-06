@@ -1,7 +1,11 @@
 appId: dev.viditor.app
 productName: Viditor
+copyright: Viditor
 directories:
   output: release
+  buildResources: build
+icon: build/icon.png
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 files:
   - out/**/*
   - package.json
@@ -15,16 +19,30 @@ extraResources:
     to: licenses
   - from: resources/transitions
     to: transitions
+# Asociación de archivos: doble clic en un .vdproj abre Viditor (src/main/index.ts lee el argumento y lo pasa al renderer)
 fileAssociations:
   - ext: vdproj
     name: Proyecto de Viditor
     description: Proyecto de Viditor
+    mimeType: application/x-viditor-project
+    role: Editor
 win:
   target: [nsis, portable]
 nsis:
   oneClick: false
+  perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Viditor
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
 linux:
   target: [AppImage, deb]
   category: AudioVideo
   maintainer: Viditor
+  synopsis: Editor de video con transiciones programables
+  mimeTypes: [application/x-viditor-project]
+deb:
+  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0]

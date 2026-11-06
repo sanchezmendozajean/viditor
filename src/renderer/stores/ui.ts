@@ -28,6 +28,8 @@ export const useUiStore = defineStore('ui', {
   state: () => ({
     workspace: 'edit' as WorkspaceId,
     newProjectOpen: false,
+    paletteOpen: false,
+    prefsOpen: false,
     importAsk: null as { count: number; resolve: (c: ImportChoice | null) => void } | null,
     tasks: [] as BackgroundTask[],
     /** Se incrementa cuando termina una miniatura para refrescar las <img>. */
@@ -61,6 +63,9 @@ export const useUiStore = defineStore('ui', {
           }
         }
       })
+    },
+    bumpThumbs(ids: string[]): void {
+      for (const id of ids) this.thumbVersion[id] = (this.thumbVersion[id] ?? 0) + 1
     },
     onTask(task: BackgroundTask): void {
       const i = this.tasks.findIndex((t) => t.id === task.id)

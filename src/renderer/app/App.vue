@@ -11,38 +11,20 @@ import EditorLayout from './EditorLayout.vue'
 import NewProjectDialog from './dialogs/NewProjectDialog.vue'
 import ImportDialog from './dialogs/ImportDialog.vue'
 import ContextMenu from './components/ContextMenu.vue'
-import { handleTimelineKey } from './shortcuts'
+import { handleKey } from './commands'
+import CommandPalette from './dialogs/CommandPalette.vue'
+import PreferencesDialog from './dialogs/PreferencesDialog.vue'
+import { useAppPrefs } from '@/stores/prefs'
 
 const project = useProjectStore()
 const ui = useUiStore()
 let offTask: (() => void) | undefined
 let offProxy: (() => void) | undefined
+let offOpenFile: (() => void) | undefined
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 
 function onKey(e: KeyboardEvent): void {
-  const mod = e.ctrlKey || e.metaKey
-  if (e.key === 'F1') {
-    e.preventDefault()
-    window.viditor.help.open('index')
-  } else if (mod && e.key.toLowerCase() === 's' && project.isOpen) {
-    e.preventDefault()
-    void project.save()
-  } else if (mod && e.key.toLowerCase() === 'm' && project.isOpen) {
-    e.preventDefault()
-    ui.workspace = 'export'
-    project.mutate((p) => (p.view.workspace = 'export'))
-  } else if (mod && e.key.toLowerCase() === 'n') {
-    e.preventDefault()
-    ui.newProjectOpen = true
-  } else if (mod && e.key.toLowerCase() === 'o') {
-    e.preventDefault()
-    void project.openWithDialog()
-  } else if (mod && e.key.toLowerCase() === 'i' && project.isOpen) {
-    e.preventDefault()
-    void project.importWithDialog()
-  } else if (project.isOpen && handleTimelineKey(e)) {
-    e.preventDefault()
-  }
+  if (handleKey(e)) e.preventDefault()
 }
 // Soltar archivos fuera de una zona de destino no debe navegar a ellos.
 const stopDrop = (e: DragEvent): void => e.preventDefault()
@@ -50,6 +32,10 @@ const stopDrop = (e: DragEvent): void => e.preventDefault()
 onMounted(() => {
   void useTransitionsStore().start()
   useExportStore().listen()
+  void useAppPrefs().load()
+  // Abrir un .vdproj desde el explorador (doble clic / asociación de archivo)
+  void window.viditor.app.takePendingFile().then((f) => { if (f) void project.open(f) })
+  offOpenFile = window.viditor.app.onOpenFile((f) => void project.open(f))
   offTask = window.viditor.media.onTask((t) => ui.onTask(t))
   // Un proxy H.264 terminó: el medio pasa a reproducirse desde él (el original no se toca).
   offProxy = window.viditor.media.onProxyReady(({ mediaId, path }) => {
@@ -65,6 +51,7 @@ onMounted(() => {
 onUnmounted(() => {
   offTask?.()
   offProxy?.()
+  offOpenFile?.()
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('dragover', stopDrop)
   window.removeEventListener('drop', stopDrop)
@@ -86,6 +73,8 @@ watch(
     <StatusBar />
     <NewProjectDialog v-if="ui.newProjectOpen" />
     <ImportDialog v-if="ui.importAsk" />
+    <CommandPalette v-if="ui.paletteOpen" />
+    <PreferencesDialog v-if="ui.prefsOpen" />
     <ContextMenu />
     <div v-if="ui.toast" class="toast" :class="ui.toast.kind" role="alert" data-testid="toast" @click="ui.toast = null">{{ ui.toast.text }}</div>
   </div>

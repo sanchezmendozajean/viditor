@@ -105,6 +105,29 @@ export const useProjectStore = defineStore('project', {
       await this.loadRecents()
     },
 
+    /** Revincula un medio cuyo archivo falta (y los demás faltantes que estén en la misma carpeta). */
+    async relink(mediaId: string): Promise<void> {
+      const ui = useUiStore()
+      const p = this.project
+      const target = p?.media.find((m) => m.id === mediaId)
+      if (!p || !target) return
+      const missing = p.media.filter((m) => this.missing.includes(m.id)).map((m) => ({ id: m.id, path: m.path }))
+      const r = await window.viditor.media.relink({ id: target.id, path: target.path }, missing)
+      if (!r.ok) return ui.showError(r.error)
+      if (!r.value) return
+      const found = r.value
+      this.mutate((proj) => {
+        for (const f of found) {
+          const m = proj.media.find((x) => x.id === f.id)
+          if (m) Object.assign(m, { path: f.path, storage: f.storage })
+        }
+      })
+      this.missing = this.missing.filter((id) => !found.some((f) => f.id === id))
+      ui.bumpThumbs(found.map((f) => f.id))
+      await this.save()
+      ui.showInfo(found.length === 1 ? 'Medio revinculado.' : `${found.length} medios revinculados.`)
+    },
+
     async importWithDialog(): Promise<void> {
       const files = await window.viditor.dialogs.chooseMediaFiles()
       if (files.length) await this.importPaths(files)

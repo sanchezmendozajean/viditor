@@ -35,7 +35,7 @@ function onMaster(e: Event): void {
 </script>
 
 <template>
-  <Panel title="Mezclador de audio" help="timeline">
+  <Panel title="Mezclador de audio" help="audio">
     <div class="mixer" data-testid="mixer">
       <div v-for="t in tracks" :key="t.id" class="strip" :data-testid="`strip-${t.name}`">
         <div class="name" :title="t.name">{{ t.name }}</div>

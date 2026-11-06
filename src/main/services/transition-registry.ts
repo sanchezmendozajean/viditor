@@ -5,6 +5,7 @@ import { app, shell } from 'electron'
 import chokidar, { type FSWatcher } from 'chokidar'
 import type { TransitionFile, TransitionOrigin } from '@shared/ipc'
 import { resourcePath } from './paths'
+import type { PrefsService } from './prefs-service'
 import { writeAtomic, type ProjectService } from './project-service'
 
 const ID_RE = /^[a-z0-9-]+$/
@@ -50,14 +51,17 @@ export class TransitionRegistry {
   private timer: ReturnType<typeof setTimeout> | null = null
   onChange: ((list: TransitionFile[]) => void) | null = null
 
-  constructor(private readonly projects: ProjectService) {}
+  constructor(
+    private readonly projects: ProjectService,
+    private readonly prefs?: PrefsService
+  ) {}
 
   dir(origin: TransitionOrigin): string | null {
     switch (origin) {
       case 'builtin':
         return resourcePath('transitions')
       case 'user':
-        return join(app.getPath('userData'), 'transitions')
+        return this.prefs?.get().transitionsDir || join(app.getPath('userData'), 'transitions')
       case 'project':
         return this.projects.dir ? join(this.projects.dir, 'transitions') : null
     }

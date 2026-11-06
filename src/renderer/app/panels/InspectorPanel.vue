@@ -13,7 +13,7 @@ const track = computed(() => project.project?.tracks.find((t) => t.id === tl.sel
 </script>
 
 <template>
-  <Panel title="Inspector" help="project">
+  <Panel title="Inspector" help="transforms">
     <TransitionInspector v-if="project.project && tl.selectedTransition" />
     <ClipInspector v-else-if="project.project && tl.selection.length > 0" />
     <div v-else-if="project.project && track" class="insp" data-testid="inspector-track">

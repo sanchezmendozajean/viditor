@@ -114,7 +114,7 @@ defineExpose({ save })
         </Panel>
         <Splitter dir="column" @drag="size.params = clamp(size.params - $event, 90, 500)" />
         <div class="params" :style="{ height: size.params + 'px' }">
-          <Panel title="Parámetros">
+          <Panel title="Parámetros" help="transitions">
             <div class="plist" data-testid="preview-params">
               <div class="field">
                 <label>Duración</label>

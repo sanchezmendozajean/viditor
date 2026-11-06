@@ -1,43 +1,97 @@
 # Atajos de teclado
 
-## General
+::: info Generado
+Esta tabla se genera desde el catálogo de comandos de la aplicación. Todos los atajos se pueden cambiar en **Preferencias › Atajos de teclado** (`Ctrl+,`), y todos los comandos —también los que no tienen atajo— están en la **paleta de comandos** (`Ctrl+Mayús+P`).
+:::
+
+## Archivo
 
 | Atajo | Acción |
 |-------|--------|
-| `Ctrl+N` | Nuevo proyecto |
-| `Ctrl+O` | Abrir proyecto |
+| `Ctrl+N` | Nuevo proyecto… |
+| `Ctrl+O` | Abrir proyecto… |
 | `Ctrl+S` | Guardar |
-| `Ctrl+I` | Importar medios |
-| `F1` | Abrir esta documentación |
+| `Ctrl+I` | Importar medios… |
+| — | Cerrar proyecto |
+| `Ctrl+Mayús+E` | Exportar fotograma actual (PNG)… |
+| `Ctrl+M` | Ir a Exportar |
+
+## Edición
+
+| Atajo | Acción |
+|-------|--------|
+| `Ctrl+Z` | Deshacer |
+| `Ctrl+Mayús+Z` / `Ctrl+Y` | Rehacer |
+| `Ctrl+A` | Seleccionar todo |
+| `Esc` | Quitar la selección |
+| `Supr` / `Retroceso` | Eliminar |
+| `Mayús+Supr` / `Mayús+Retroceso` | Eliminar y cerrar hueco |
 
 ## Reproducción
 
 | Atajo | Acción |
 |-------|--------|
 | `Espacio` | Reproducir / pausa |
-| `L` | Reproducir hacia delante; pulsa de nuevo para ×2 y ×4 |
-| `J` | Reproducir hacia atrás (sin audio); pulsa de nuevo para ×2 y ×4 |
+| `L` | Reproducir hacia delante (×1, ×2, ×4) |
+| `J` | Reproducir hacia atrás (×1, ×2, ×4) |
 | `K` | Pausa |
-| `←` `→` | Frame anterior / siguiente (`Mayús`: 5 frames) |
+| `←` | Frame anterior |
+| `→` | Frame siguiente |
+| `Mayús+←` | Retroceder 5 frames |
+| `Mayús+→` | Avanzar 5 frames |
+| `↑` | Borde de clip anterior |
+| `↓` | Borde de clip siguiente |
+| `Home` | Ir al inicio |
+| `End` | Ir al final |
+| — | Ir al marcador anterior |
+| — | Ir al marcador siguiente |
 
 ## Línea de tiempo
 
 | Atajo | Acción |
 |-------|--------|
-| `Ctrl+Z` | Deshacer |
-| `Ctrl+Shift+Z` / `Ctrl+Y` | Rehacer |
-| `Ctrl+A` | Seleccionar todos los clips |
 | `Ctrl+K` | Dividir en el cabezal |
-| `Supr` / `Mayús+Supr` | Eliminar / eliminar y cerrar hueco |
-| `Mayús+E` | Habilitar o deshabilitar clip |
-| `Q` / `W` | Recortar inicio / final hasta el cabezal |
-| `V` / `C` / `H` | Herramienta selección / cuchilla / mano |
-| `S` | Activar o desactivar el imán |
+| `Q` | Recortar inicio al cabezal |
+| `W` | Recortar final al cabezal |
+| `Mayús+E` | Habilitar / deshabilitar clip |
+| — | Restablecer transformación |
+| `Ctrl+D` | Aplicar la transición predeterminada |
+| `V` | Herramienta de selección |
+| `C` | Herramienta cuchilla |
+| `H` | Herramienta mano |
+| `S` | Activar / desactivar el imán |
 | `M` | Agregar marcador |
-| `I` / `O` | Marcar entrada / salida del rango de exportación |
-| `Ctrl+M` | Abrir el espacio de trabajo Exportar |
-| `←` `→` | Frame anterior / siguiente |
-| `↑` `↓` | Borde de clip anterior / siguiente |
-| `Home` / `End` | Ir al inicio / al fin |
-| `+` `-` `\` | Acercar / alejar / ajustar zoom |
-| `Esc` | Quitar la selección |
+| `I` | Marcar entrada (rango de exportación) |
+| `O` | Marcar salida (rango de exportación) |
+| — | Agregar pista de video |
+| — | Agregar pista de audio |
+| `+` / `=` | Acercar la línea de tiempo |
+| `-` | Alejar la línea de tiempo |
+| `\` | Ajustar el zoom a la secuencia |
+
+## Fotogramas clave
+
+| Atajo | Acción |
+|-------|--------|
+| — | Fotograma clave de movimiento en el cabezal |
+| — | Fotograma clave de opacidad en el cabezal |
+| — | Fotograma clave de volumen en el cabezal |
+| — | Ir al fotograma clave anterior |
+| — | Ir al fotograma clave siguiente |
+
+## Ver
+
+| Atajo | Acción |
+|-------|--------|
+| — | Espacio de trabajo: Edición |
+| — | Espacio de trabajo: Transiciones |
+| — | Espacio de trabajo: Audio |
+| `Ctrl+Mayús+P` | Paleta de comandos… |
+| `Ctrl+,` | Preferencias… |
+
+## Ayuda
+
+| Atajo | Acción |
+|-------|--------|
+| `F1` | Documentación |
+| — | Atajos de teclado (guía) |

@@ -1,5 +1,6 @@
 import type { DecodedFrame, DecodeRequest, ExportCapabilities, ExportJobData, ExportOptions, ExportProgress } from './export-model'
 import type { AudioMode } from './transition-model'
+import type { Prefs } from './prefs-schema'
 import type { ImportMode, MediaBin, MediaItem, Project, ProjectSettings } from './project-schema'
 
 export interface RecentProject {
@@ -44,6 +45,13 @@ export interface ImportResult {
   media: MediaItem[]
   bins: MediaBin[]
   skipped: string[]
+}
+
+/** Medio revinculado: nueva ruta tal como se guarda en el proyecto */
+export interface RelinkedMedia {
+  id: string
+  path: string
+  storage: 'project' | 'external'
 }
 
 export interface Waveform {
@@ -109,6 +117,8 @@ export interface ViditorApi {
     waveform(mediaId: string, path: string): Promise<IpcResult<Waveform>>
     /** Muestra el archivo del medio en el explorador del sistema. */
     reveal(path: string): void
+    /** Pide localizar el archivo de `target`; revincula también los demás faltantes que estén en esa carpeta. null = cancelado */
+    relink(target: { id: string; path: string }, missing: { id: string; path: string }[]): Promise<IpcResult<RelinkedMedia[] | null>>
     onTask(cb: (task: BackgroundTask) => void): () => void
     /** Un proxy H.264 terminó de generarse (ruta relativa al proyecto). */
     onProxyReady(cb: (e: { mediaId: string; path: string }) => void): () => void
@@ -141,6 +151,8 @@ export interface ViditorApi {
     reveal(path: string): void
     /** Abre el archivo con el reproductor del sistema */
     open(path: string): void
+    /** Guarda un PNG (frame actual) tras pedir el destino. null = cancelado */
+    saveFrame(name: string, png: Uint8Array): Promise<IpcResult<string | null>>
   }
   /** Solo lo usa la ventana oculta de exportación */
   exportRunner: {
@@ -152,7 +164,17 @@ export interface ViditorApi {
     finish(jobId: string, timings?: Record<string, number>): Promise<IpcResult<null>>
     fail(jobId: string, message: string): void
   }
+  prefs: {
+    get(): Promise<Prefs>
+    set(partial: Partial<Prefs>): Promise<IpcResult<Prefs>>
+    /** Aplica la escala de la interfaz (zoom de la ventana) */
+    applyScale(percent: number): void
+  }
   app: {
+    /** Archivo .vdproj con el que se abrió la aplicación (doble clic / asociación), una sola vez */
+    takePendingFile(): Promise<string | null>
+    /** Se pidió abrir un .vdproj con la aplicación ya en marcha */
+    onOpenFile(cb: (file: string) => void): () => void
     onMenuAction(cb: (action: string) => void): () => void
     openExternal(url: string): void
   }
@@ -180,6 +202,7 @@ export const IPC = {
   mediaWaveform: 'media:waveform',
   mediaProxyReady: 'media:proxy-ready',
   mediaReveal: 'media:reveal',
+  mediaRelink: 'media:relink',
   transitionsList: 'transitions:list',
   transitionsSave: 'transitions:save',
   transitionsCreate: 'transitions:create',
@@ -196,6 +219,7 @@ export const IPC = {
   exportProgress: 'export:progress',
   exportReveal: 'export:reveal',
   exportOpen: 'export:open',
+  exportSaveFrame: 'export:save-frame',
   exportJobData: 'export:job-data',
   exportBegin: 'export:begin',
   exportDecode: 'export:decode',
@@ -203,6 +227,10 @@ export const IPC = {
   exportReport: 'export:report',
   exportFinish: 'export:finish',
   exportFail: 'export:fail',
+  prefsGet: 'prefs:get',
+  prefsSet: 'prefs:set',
+  appPendingFile: 'app:pending-file',
+  appOpenFile: 'app:open-file',
   appMenuAction: 'app:menu-action',
   appOpenExternal: 'app:open-external'
 } as const

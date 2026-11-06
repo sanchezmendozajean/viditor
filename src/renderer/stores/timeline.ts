@@ -2,9 +2,22 @@ import { defineStore } from 'pinia'
 import { markRaw } from 'vue'
 import { ulid } from 'ulid'
 import { History } from '@shared/history'
-import type { Clip, Project, Track } from '@shared/project-schema'
+import type { Clip, Keyframe, Project, Track } from '@shared/project-schema'
+import {
+  KEY_PROPS,
+  clearKeys,
+  editAnimated,
+  keyAt,
+  keyTimes,
+  removeKey,
+  sourceTimeAt,
+  timelineTimeOf,
+  upsertKey,
+  valueAtSource,
+  type KeyProp
+} from '@shared/keyframes'
 import * as ops from '@shared/timeline-ops'
-import { clone } from '@shared/timeline-ops'
+import { clipEnd, clone } from '@shared/timeline-ops'
 import { transitionRange } from '@shared/transition-model'
 import { useProjectStore } from './project'
 import { useTransitionsStore } from './transitions'
@@ -143,16 +156,78 @@ export const useTimelineStore = defineStore('timeline', {
     editSelected(label: string, fn: (clip: Clip, p: Project) => void): void {
       const ids = this.editableSelection()
       if (ids.length === 0) return
+      const t = this.playhead
       this.run(label, (p) => {
-        for (const c of p.clips) if (ids.includes(c.id)) fn(c, p)
+        for (const c of p.clips) if (ids.includes(c.id)) editAnimated(c, t, (cc) => fn(cc, p))
       })
     },
     /** Cambio en vivo durante un arrastre: no entra al historial hasta `commit`. */
     liveSelected(fn: (clip: Clip, p: Project) => void): void {
       const ids = this.editableSelection()
+      const t = this.playhead
       useProjectStore().mutate((p) => {
-        for (const c of p.clips) if (ids.includes(c.id)) fn(c, p)
+        for (const c of p.clips) if (ids.includes(c.id)) editAnimated(c, t, (cc) => fn(cc, p))
       })
+    },
+
+    // ───── Fotogramas clave ─────
+
+    /** Crea o quita, en el cabezal, el fotograma de las propiedades dadas de los clips seleccionados. */
+    toggleKey(props: KeyProp[]): void {
+      const t = this.playhead
+      const ids = this.editableSelection()
+      this.run('Fotograma clave', (p) => {
+        for (const c of p.clips) {
+          if (!ids.includes(c.id) || t < c.start || t >= clipEnd(c)) continue
+          const s = sourceTimeAt(c, t)
+          const on = props.every((pr) => keyAt(c, pr, s))
+          for (const pr of props) {
+            if (on) removeKey(c, pr, s)
+            else upsertKey(c, pr, s, valueAtSource(c, pr, s))
+          }
+        }
+      })
+    },
+    /** Vuelve a la transformación inicial (sin animación) de los clips seleccionados. */
+    resetTransform(): void {
+      this.editSelected('Restablecer transformación', (c) => {
+        clearKeys(c, KEY_PROPS, 0)
+        Object.assign(c.transform, { fit: 'fit', x: 0, y: 0, scaleX: 1, scaleY: 1, lockAspect: true, rotation: 0, flipH: false, flipV: false, anchorX: 0.5, anchorY: 0.5, opacity: 1, crop: { left: 0, top: 0, right: 0, bottom: 0 } })
+      })
+    },
+    /** Quita la animación de las propiedades dadas (conservan el valor del cabezal). */
+    clearAnimation(props: KeyProp[]): void {
+      const t = this.playhead
+      const ids = this.editableSelection()
+      this.run('Quitar animación', (p) => {
+        for (const c of p.clips) if (ids.includes(c.id)) clearKeys(c, props, sourceTimeAt(c, t))
+      })
+    },
+    /** Interpolación del tramo que empieza en el fotograma del cabezal. */
+    setKeyEase(props: KeyProp[], ease: Keyframe['ease']): void {
+      const t = this.playhead
+      const ids = this.editableSelection()
+      this.run('Cambiar interpolación', (p) => {
+        for (const c of p.clips) {
+          if (!ids.includes(c.id)) continue
+          const s = sourceTimeAt(c, t)
+          for (const pr of props) {
+            const k = keyAt(c, pr, s)
+            if (k) k.ease = ease
+          }
+        }
+      })
+    },
+    /** Salta al fotograma clave anterior / siguiente del primer clip seleccionado. */
+    seekKey(dir: -1 | 1, props: readonly KeyProp[] = KEY_PROPS): void {
+      const p = this.project
+      const c = this.selectedClips[0]
+      if (!p || !c) return
+      const margin = p.settings.fps.den / p.settings.fps.num / 2
+      const times = keyTimes(c, props).map((s) => timelineTimeOf(c, s))
+      const here = this.playhead
+      const target = dir > 0 ? times.find((x) => x > here + margin) : [...times].reverse().find((x) => x < here - margin)
+      if (target !== undefined) this.setPlayhead(target)
     },
 
     // ───── Cabezal, zoom, selección ─────
@@ -468,6 +543,34 @@ export const useTimelineStore = defineStore('timeline', {
       this.run('Agregar marcador', (p) => {
         if (!p.markers.some((m) => Math.abs(m.time - t) < 1e-6)) p.markers.push({ time: t, label: '', color: '#E8B33A' })
       })
+    },
+
+    renameMarker(time: number, label: string): void {
+      this.run('Renombrar marcador', (p) => {
+        const m = p.markers.find((x) => Math.abs(x.time - time) < 1e-6)
+        if (m) m.label = label.trim()
+      })
+    },
+    setMarkerColor(time: number, color: string): void {
+      this.run('Color del marcador', (p) => {
+        const m = p.markers.find((x) => Math.abs(x.time - time) < 1e-6)
+        if (m) m.color = color
+      })
+    },
+    deleteMarker(time: number): void {
+      this.run('Eliminar marcador', (p) => {
+        p.markers = p.markers.filter((x) => Math.abs(x.time - time) >= 1e-6)
+      })
+    },
+    /** Salta al marcador anterior / siguiente al cabezal. */
+    seekMarker(dir: -1 | 1): void {
+      const p = this.project
+      if (!p) return
+      const margin = p.settings.fps.den / p.settings.fps.num / 2
+      const times = p.markers.map((m) => m.time).sort((a, b) => a - b)
+      const here = this.playhead
+      const target = dir > 0 ? times.find((x) => x > here + margin) : [...times].reverse().find((x) => x < here - margin)
+      if (target !== undefined) this.setPlayhead(target)
     },
 
     /** ↑ / ↓: salta al borde de clip anterior / siguiente. */

@@ -22,7 +22,10 @@
     "docs:build:app": "npm run docs:api && cross-env VITEPRESS_TARGET=app vitepress build docs",
     "docs:build:pages": "npm run docs:api && cross-env VITEPRESS_TARGET=pages vitepress build docs",
     "pack": "npm run ffmpeg:fetch && npm run docs:build:app && npm run build && electron-builder",
-    "docs:api": "node scripts/docs-api.mjs && node scripts/docs-examples.mjs"
+    "docs:api": "node scripts/docs-api.mjs && node scripts/docs-examples.mjs",
+    "docs:shots": "cross-env VIDITOR_DOCS_SHOTS=1 playwright test tests/e2e/docs-shots.spec.ts",
+    "docs:shortcuts": "cross-env UPDATE_DOCS=1 vitest run tests/unit/commands.test.ts",
+    "icon": "node scripts/make-icon.mjs"
   },
   "dependencies": {
     "acorn": "^8.19.0",

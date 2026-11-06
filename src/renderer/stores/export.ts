@@ -8,6 +8,8 @@ import {
   type HwMode,
   type VideoCodec
 } from '@shared/export-model'
+import { engine } from '@/engine/engine'
+import { formatTimecode } from '@shared/timecode'
 import { useProjectStore } from './project'
 import { useTimelineStore } from './timeline'
 import { useUiStore } from './ui'
@@ -51,6 +53,23 @@ export const useExportStore = defineStore('export', {
   },
 
   actions: {
+    /** Exportar fotograma (Ctrl+Mayús+E): PNG del cabezal a la resolución del proyecto. */
+    async exportFrame(): Promise<void> {
+      const ui = useUiStore()
+      const project = useProjectStore()
+      const p = project.project
+      if (!p) return
+      const blob = await engine.snapshotPng()
+      if (!blob) return ui.showError('Abre el monitor (espacio Editar o Exportar) para exportar el fotograma.')
+      const tc = formatTimecode(useTimelineStore().playhead, p.settings.fps.num, p.settings.fps.den).replace(/:/g, '-')
+      const r = await window.viditor.export.saveFrame(`${p.name} ${tc}`, new Uint8Array(await blob.arrayBuffer()))
+      if (!r.ok) return ui.showError(r.error)
+      if (r.value) {
+        ui.showInfo('Fotograma guardado.')
+        window.viditor.export.reveal(r.value)
+      }
+    },
+
     /** Suscripción única a los avisos de progreso del main. */
     listen(): void {
       if (listening) return

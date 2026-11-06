@@ -31,6 +31,7 @@ const PREWARM_S = 1.5
  */
 export class Engine {
   private compositor: Compositor | null = null
+  private canvas: HTMLCanvasElement | null = null
   private sources = new SourceProvider()
   private audio = new AudioGraph()
   private raf = 0
@@ -57,6 +58,7 @@ export class Engine {
   // ───────── Vida del monitor ─────────
 
   attach(canvas: HTMLCanvasElement): void {
+    this.canvas = canvas
     this.compositor = new Compositor(canvas)
     this.applySize()
     if (!this.meterTimer) this.meterTimer = setInterval(() => this.pollMeters(), 40)
@@ -65,6 +67,7 @@ export class Engine {
 
   detach(): void {
     this.compositor = null
+    this.canvas = null
   }
 
   /** Libera todo al cerrar el proyecto. */
@@ -154,6 +157,19 @@ export class Engine {
     this.sources.pauseAll()
     this.applySize(true) // al pausar se renderiza a calidad completa
     await this.renderAt(useTimelineStore().playhead)
+  }
+
+  /**
+   * PNG del frame del cabezal con el mismo compositor, a la resolución del proyecto y calidad completa.
+   * La captura se hace en la misma tarea que el dibujo (el lienzo WebGL no conserva su búfer).
+   */
+  async snapshotPng(): Promise<Blob | null> {
+    if (!this.project || !this.compositor || !this.canvas) return null
+    this.pause()
+    this.applySize(true)
+    await this.renderAt(useTimelineStore().playhead)
+    const canvas = this.canvas
+    return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'))
   }
 
   // ───────── Reproducción ─────────

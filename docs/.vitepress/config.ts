@@ -17,11 +17,24 @@ const apiSidebar = [apiGroup('interfaces', 'Interfaces'), apiGroup('type-aliases
 // Dos compilaciones (specs/09): "app" → resources/docs (base "/"), "pages" → GitHub Pages (base "/viditor/").
 const target = process.env.VITEPRESS_TARGET === 'app' ? 'app' : 'pages'
 
+// Versionado en GitHub Pages: la raíz publica la última release y `main` va en /next/ (ver .github/workflows/docs.yml).
+//   VITEPRESS_BASE    prefijo de rutas (p. ej. /viditor/ o /viditor/next/)
+//   VITEPRESS_VERSION etiqueta de esta compilación ("next" o "1.2.0")
+//   VITEPRESS_SITE    URL raíz del sitio (p. ej. https://usuario.github.io/viditor/) para enlazar entre versiones
+const pagesBase = process.env.VITEPRESS_BASE ?? '/viditor/'
+const version = process.env.VITEPRESS_VERSION ?? ''
+const site = (process.env.VITEPRESS_SITE ?? '').replace(/\/?$/, '/')
+// La compilación de la app (empaquetada) no muestra selector de versiones: su versión es la de la propia app.
+const versionNav =
+  target === 'pages' && version && process.env.VITEPRESS_SITE
+    ? [{ text: version === 'next' ? 'next (en desarrollo)' : `v${version}`, items: [{ text: 'Última versión', link: site }, { text: 'En desarrollo (next)', link: `${site}next/` }] }]
+    : []
+
 export default defineConfig({
   lang: 'es-ES',
   title: 'Viditor',
   description: 'Editor de video con transiciones programables',
-  base: target === 'app' ? '/' : '/viditor/',
+  base: target === 'app' ? '/' : pagesBase,
   outDir: target === 'app' ? '../resources/docs' : '.vitepress/dist',
   cleanUrls: true,
   ignoreDeadLinks: false,
@@ -34,7 +47,8 @@ export default defineConfig({
       { text: 'Guía', link: '/guia/crear-y-abrir-proyectos' },
       { text: 'Transiciones', link: '/transiciones/primera-transicion' },
       { text: 'Referencia API', link: '/api/' },
-      { text: 'Ejemplos', link: '/ejemplos/' }
+      { text: 'Ejemplos', link: '/ejemplos/' },
+      ...versionNav
     ],
     sidebar: {
       '/guia/': [
@@ -46,9 +60,12 @@ export default defineConfig({
             { text: 'Línea de tiempo', link: '/guia/linea-de-tiempo' },
             { text: 'Vista previa y reproducción', link: '/guia/vista-previa' },
             { text: 'Transformaciones', link: '/guia/transformaciones' },
+            { text: 'Fotogramas clave', link: '/guia/fotogramas-clave' },
             { text: 'Audio y mezclador', link: '/guia/audio' },
             { text: 'Exportar', link: '/guia/exportar' },
-            { text: 'Atajos de teclado', link: '/guia/atajos' }
+            { text: 'Atajos de teclado', link: '/guia/atajos' },
+            { text: 'Preferencias y paleta de comandos', link: '/guia/preferencias' },
+            { text: 'Solución de problemas', link: '/guia/solucion-de-problemas' }
           ]
         }
       ],

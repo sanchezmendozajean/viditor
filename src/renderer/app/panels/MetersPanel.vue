@@ -11,7 +11,7 @@ const fmt = (db: number | undefined): string => (db === undefined || !Number.isF
 </script>
 
 <template>
-  <Panel title="Medidores">
+  <Panel title="Medidores" help="audio">
     <div class="meters" data-testid="meters">
       <div class="scale">
         <span v-for="s in scale" :key="s" :style="{ bottom: ((s + 60) / 66) * 100 + '%' }" class="dim mono">{{ s }}</span>

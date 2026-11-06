@@ -28,6 +28,7 @@ const trs = useTransitionsStore()
 const dropTarget = ref<{ trackId: string; time: number; leaveId: string | null; enterId: string | null } | null>(null)
 
 const scroller = ref<HTMLElement | null>(null)
+const ruler = ref<InstanceType<typeof TimelineRuler> | null>(null)
 const collapsed = reactive(new Set<string>())
 const preview = ref<Record<string, { start: number; trackId: string }> | null>(null)
 const marquee = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
@@ -466,6 +467,18 @@ function transitionMenu(e: MouseEvent, tr: Transition): void {
 
 // ───────── Menús contextuales ─────────
 
+const MARKER_COLORS: [string, string][] = [['Amarillo', '#E8B33A'], ['Rojo', '#E5484D'], ['Verde', '#3DAE6B'], ['Azul', '#4C8DF6'], ['Violeta', '#9B6CF0']]
+function markerMenu(e: MouseEvent, m: import('@shared/project-schema').Marker): void {
+  ui.openMenu(e, [
+    { label: 'Ir al marcador', action: () => tl.setPlayhead(m.time) },
+    { label: 'Renombrar', action: () => ruler.value?.edit(m) },
+    { separator: true, label: '' },
+    ...MARKER_COLORS.map(([label, color]) => ({ label: `Color: ${label}`, action: () => tl.setMarkerColor(m.time, color) })),
+    { separator: true, label: '' },
+    { label: 'Eliminar marcador', action: () => tl.deleteMarker(m.time) }
+  ])
+}
+
 function clipMenu(e: MouseEvent, clip: Clip): void {
   const t = snapped(timeAt(e), new Set())
   tl.snapGuide = null
@@ -487,7 +500,8 @@ function clipMenu(e: MouseEvent, clip: Clip): void {
     { separator: true, label: '' },
     { label: clip.enabled ? 'Deshabilitar' : 'Habilitar', shortcut: 'Mayús+E', disabled: locked, action: () => tl.toggleEnabled() },
     { separator: true, label: '' },
-    { label: 'Restablecer transformación', disabled: true },
+    { label: 'Restablecer transformación', disabled: locked, action: () => tl.resetTransform() },
+    ...(project.missing.includes(clip.mediaId) ? [{ label: 'Revincular medio…', action: () => void project.relink(clip.mediaId) }] : []),
     { label: 'Mostrar en el explorador', disabled: !m, action: () => m && window.viditor.media.reveal(m.path) },
     { label: 'Propiedades', disabled: true }
   ]
@@ -611,7 +625,7 @@ function clipsOf(t: Track): Clip[] {
         <div class="content" :style="{ width: HEADER_W + contentW + 'px', height: Math.max(totalH, 1) + 'px' }">
           <div class="ruler-row">
             <div class="corner mono" data-testid="timecode">{{ tc(tl.playhead) }}</div>
-            <TimelineRuler :zoom="zoom" :width="contentW" :fps-num="fps.num" :fps-den="fps.den" :markers="p.markers" @scrub="onScrub" @marker="tl.setPlayhead($event)" />
+            <TimelineRuler ref="ruler" :zoom="zoom" :width="contentW" :fps-num="fps.num" :fps-den="fps.den" :markers="p.markers" @scrub="onScrub" @marker="tl.setPlayhead($event)" @rename="tl.renameMarker" @menu="markerMenu" />
             <div class="ph-cap" :style="{ left: playheadX + 'px' }" />
           </div>
 

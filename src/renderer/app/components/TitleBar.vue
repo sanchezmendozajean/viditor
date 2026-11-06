@@ -3,6 +3,9 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { useUiStore } from '@/stores/ui'
 import { useTimelineStore } from '@/stores/timeline'
+import { useTransitionsStore } from '@/stores/transitions'
+import { COMMAND_BY_ID } from '@shared/commands-meta'
+import { executeCommand, isAvailable, shortcutLabel } from '../commands'
 import Icon from './Icon.vue'
 
 interface MenuItem { label: string; shortcut?: string; action?: () => void; disabled?: boolean; separator?: boolean }
@@ -26,68 +29,54 @@ function closeOnOutside(e: PointerEvent): void {
   if (!(e.target as HTMLElement).closest('.menus')) openMenu.value = null
 }
 
+/** Entrada de menú de un comando: etiqueta, atajo efectivo (con las personalizaciones) y disponibilidad vienen del registro. */
+function cmd(id: string, label?: string): MenuItem {
+  const meta = COMMAND_BY_ID.get(id)
+  return { label: label ?? meta?.label ?? id, shortcut: shortcutLabel(id), disabled: meta ? !isAvailable(meta) : true, action: () => void executeCommand(id) }
+}
+const sep: MenuItem = { separator: true, label: '' }
+
 function menus(): Menu[] {
   const has = project.isOpen
   return [
     {
       label: 'Archivo',
-      items: [
-        { label: 'Nuevo proyecto…', shortcut: 'Ctrl+N', action: () => (ui.newProjectOpen = true) },
-        { label: 'Abrir proyecto…', shortcut: 'Ctrl+O', action: () => void project.openWithDialog() },
-        { separator: true, label: '' },
-        { label: 'Guardar', shortcut: 'Ctrl+S', disabled: !has, action: () => void project.save() },
-        { label: 'Importar medios…', shortcut: 'Ctrl+I', disabled: !has, action: () => void importDialog() },
-        { separator: true, label: '' },
-        { label: 'Cerrar proyecto', disabled: !has, action: () => void project.close() },
-        { label: 'Salir', action: () => window.viditor.window.close() }
-      ]
+      items: [cmd('file.new'), cmd('file.open'), sep, cmd('file.save'), cmd('file.import'), cmd('export.frame'), sep, cmd('file.close'), { label: 'Salir', action: () => window.viditor.window.close() }]
     },
     {
       label: 'Editar',
       items: [
-        { label: tl.undoLabel ? `Deshacer ${tl.undoLabel}` : 'Deshacer', shortcut: 'Ctrl+Z', disabled: !tl.canUndo, action: () => tl.undo() },
-        { label: tl.redoLabel ? `Rehacer ${tl.redoLabel}` : 'Rehacer', shortcut: 'Ctrl+Shift+Z', disabled: !tl.canRedo, action: () => tl.redo() },
-        { separator: true, label: '' },
-        { label: 'Seleccionar todo', shortcut: 'Ctrl+A', disabled: !has, action: () => tl.selectAll() }
+        cmd('edit.undo', tl.undoLabel ? `Deshacer ${tl.undoLabel}` : 'Deshacer'),
+        cmd('edit.redo', tl.redoLabel ? `Rehacer ${tl.redoLabel}` : 'Rehacer'),
+        sep,
+        cmd('edit.selectAll'),
+        sep,
+        cmd('app.preferences')
       ]
     },
     {
       label: 'Clip',
-      items: [
-        { label: 'Dividir en el cabezal', shortcut: 'Ctrl+K', disabled: !has, action: () => tl.splitAtPlayhead() },
-        { label: 'Eliminar', shortcut: 'Supr', disabled: !has || !tl.selection.length, action: () => tl.deleteSelection(false) },
-        { label: 'Eliminar y cerrar hueco', shortcut: 'Mayús+Supr', disabled: !has || !tl.selection.length, action: () => tl.deleteSelection(true) },
-        { separator: true, label: '' },
-        { label: 'Recortar inicio al cabezal', shortcut: 'Q', disabled: !has, action: () => tl.trimToPlayhead('start') },
-        { label: 'Recortar final al cabezal', shortcut: 'W', disabled: !has, action: () => tl.trimToPlayhead('end') },
-        { label: 'Habilitar / deshabilitar', shortcut: 'Mayús+E', disabled: !has || !tl.selection.length, action: () => tl.toggleEnabled() }
-      ]
+      items: [cmd('clip.split'), cmd('edit.delete'), cmd('edit.deleteRipple'), sep, cmd('clip.trimStart'), cmd('clip.trimEnd'), cmd('clip.toggleEnabled'), cmd('clip.resetTransform'), sep, cmd('key.toggleTransform'), cmd('key.toggleOpacity'), cmd('key.toggleVolume'), cmd('key.prev'), cmd('key.next')]
     },
     {
       label: 'Secuencia',
+      items: [cmd('track.addVideo'), cmd('track.addAudio'), sep, cmd('marker.add'), cmd('marker.prev'), cmd('marker.next'), sep, cmd('zoom.fit'), cmd('range.in'), cmd('range.out')]
+    },
+    {
+      label: 'Transiciones',
       items: [
-        { label: 'Agregar pista de video', disabled: !has, action: () => tl.addTrack('video', null, 'above') },
-        { label: 'Agregar pista de audio', disabled: !has, action: () => tl.addTrack('audio', null, 'below') },
-        { separator: true, label: '' },
-        { label: 'Agregar marcador', shortcut: 'M', disabled: !has, action: () => tl.addMarker() },
-        { label: 'Ajustar zoom a la secuencia', shortcut: '\\', disabled: !has, action: () => tl.fit(tl.viewWidth - 170) }
+        cmd('transition.default'),
+        cmd('view.transitions', 'Abrir el espacio de Transiciones'),
+        { label: 'Abrir la carpeta de transiciones del usuario', disabled: !has, action: () => void useTransitionsStore().openFolder('user') }
       ]
     },
-    { label: 'Transiciones', items: [{ label: 'Disponible en la fase 4', disabled: true }] },
-    { label: 'Ver', items: [{ label: 'Espacio de trabajo: Edición', disabled: !has, action: () => (ui.workspace = 'edit') }] },
+    { label: 'Ver', items: [cmd('view.edit'), cmd('view.transitions'), cmd('view.audio'), cmd('view.export', 'Espacio de trabajo: Exportar'), sep, cmd('app.palette')] },
     { label: 'Ventana', items: [{ label: 'Minimizar', action: () => window.viditor.window.minimize() }] },
-    {
-      label: 'Ayuda',
-      items: [
-        { label: 'Documentación', shortcut: 'F1', action: () => window.viditor.help.open('index') },
-        { label: 'Atajos de teclado', action: () => window.viditor.help.open('shortcuts') }
-      ]
-    }
+    { label: 'Ayuda', items: [cmd('help.docs'), cmd('help.shortcuts')] }
   ]
 }
 
 const win = window.viditor.window
-const importDialog = (): Promise<void> => project.importWithDialog()
 
 function run(item: MenuItem): void {
   openMenu.value = null

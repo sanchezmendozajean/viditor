@@ -55,8 +55,17 @@ export const trackSchema = z.object({
   solo: z.boolean().default(false)
 })
 
-// Clips, transiciones y marcadores se modelan completos desde la fase 1
-// para no romper el formato; su edición llega en fases posteriores.
+/**
+ * Fotograma clave. `t` está en segundos del MEDIO FUENTE (no de la línea de tiempo): así recortar o dividir
+ * un clip no desplaza la animación respecto al contenido. `ease` rige el tramo que empieza en este fotograma.
+ */
+export const keyframeSchema = z.object({
+  t: z.number().min(0),
+  v: z.number(),
+  ease: z.enum(['linear', 'smooth', 'hold']).default('linear')
+})
+export type Keyframe = z.infer<typeof keyframeSchema>
+
 export const clipSchema = z.object({
   id: z.string(),
   mediaId: z.string(),
@@ -99,7 +108,8 @@ export const clipSchema = z.object({
       fadeOut: z.number().default(0)
     })
     .default({ volume: 1, muted: false, fadeIn: 0, fadeOut: 0 }),
-  keyframes: z.record(z.string(), z.unknown()).default({})
+  /** Animación por propiedad (`x`, `y`, `scaleX`, `scaleY`, `rotation`, `opacity`, `volume`); ver `keyframes.ts` */
+  keyframes: z.record(z.string(), z.array(keyframeSchema)).default({})
 })
 
 export const transitionSchema = z.object({
