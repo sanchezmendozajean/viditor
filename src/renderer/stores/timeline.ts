@@ -5,7 +5,10 @@ import { History } from '@shared/history'
 import type { Clip, Project, Track } from '@shared/project-schema'
 import * as ops from '@shared/timeline-ops'
 import { clone } from '@shared/timeline-ops'
+import { transitionRange } from '@shared/transition-model'
 import { useProjectStore } from './project'
+import { useTransitionsStore } from './transitions'
+import { useUiStore } from './ui'
 
 export type Tool = 'select' | 'razor' | 'hand'
 
@@ -20,6 +23,8 @@ export const useTimelineStore = defineStore('timeline', {
   state: () => ({
     selection: [] as string[],
     selectedTrackId: null as string | null,
+    /** Transición seleccionada (se edita en el Inspector) */
+    selectedTransition: null as string | null,
     tool: 'select' as Tool,
     snap: true,
     /** Se incrementa en cada cambio del historial para que `canUndo/canRedo` sean reactivos. */
@@ -94,6 +99,7 @@ export const useTimelineStore = defineStore('timeline', {
       })
       const ids = new Set(s.clips.map((c) => c.id))
       this.selection = this.selection.filter((id) => ids.has(id))
+      if (this.selectedTransition && !s.transitions.some((t) => t.id === this.selectedTransition)) this.selectedTransition = null
     },
 
     /** Ejecuta un cambio como un solo comando deshacible. */
@@ -104,7 +110,9 @@ export const useTimelineStore = defineStore('timeline', {
       let result: T | undefined
       store.mutate((p) => {
         result = fn(p)
+        ops.normalizeTransitions(p)
       })
+      if (this.selectedTransition && !store.project.transitions.some((t) => t.id === this.selectedTransition)) this.selectedTransition = null
       this.commit(label, before)
       return result
     },
@@ -169,6 +177,11 @@ export const useTimelineStore = defineStore('timeline', {
     },
     select(ids: string[], additive = false): void {
       this.selection = additive ? [...new Set([...this.selection, ...ids])] : ids
+      if (ids.length) this.selectedTransition = null
+    },
+    selectTransition(id: string | null): void {
+      this.selectedTransition = id
+      if (id) this.selection = []
     },
     toggleSelect(id: string): void {
       this.selection = this.selection.includes(id) ? this.selection.filter((x) => x !== id) : [...this.selection, id]
@@ -335,6 +348,117 @@ export const useTimelineStore = defineStore('timeline', {
         const t = p.tracks.find((x) => x.id === trackId)
         if (t) t[key] = value
       })
+    },
+
+    // ───── Transiciones ─────
+
+    /** Duración por defecto de una transición (meta.defaultDuration) */
+    defaultDurationOf(ref: string): number {
+      return useTransitionsStore().metaOf(ref)?.defaultDuration ?? 1
+    },
+
+    /** Aplica una transición entre dos clips contiguos, o solo a un extremo (fundido desde/hacia nada). */
+    applyTransition(leaveId: string | null, enterId: string | null, ref?: string): string | null {
+      const p = this.project
+      const ui = useUiStore()
+      const tr = useTransitionsStore()
+      const clip = p?.clips.find((c) => c.id === (leaveId ?? enterId))
+      if (!p || !clip) return null
+      if (this.isLocked(clip.trackId)) return null
+      const useRef = ref ?? tr.defaultRef
+      const result = this.run('Agregar transición', (proj) =>
+        ops.applyTransition(
+          proj,
+          { trackId: clip.trackId, leaveId, enterId, ref: useRef, duration: this.defaultDurationOf(useRef) },
+          newId
+        )
+      )
+      if (!result || !result.ok) {
+        ui.showError(result && !result.ok ? result.error : 'No se pudo agregar la transición.')
+        return null
+      }
+      if (result.clamped) ui.showInfo(`La duración se limitó a ${result.duration.toFixed(2)} s: los clips son más cortos que la transición.`)
+      this.selectTransition(result.id)
+      return result.id
+    },
+
+    /** Unión (o extremo) sobre la que actúa Ctrl+D: según la selección y, si no hay, el cabezal. */
+    junctionTarget(): { leaveId: string | null; enterId: string | null } | null {
+      const p = this.project
+      if (!p) return null
+      const sel = this.selectedClips.filter((c) => !this.isLocked(c.trackId))
+      const next = (c: Clip): Clip | undefined => ops.trackClips(p, c.trackId).find((x) => x.start >= ops.clipEnd(c) - 1e-3 && x.id !== c.id)
+      const prev = (c: Clip): Clip | undefined => [...ops.trackClips(p, c.trackId)].reverse().find((x) => ops.clipEnd(x) <= c.start + 1e-3 && x.id !== c.id)
+      const adjacent = (a: Clip, b: Clip): boolean => Math.abs(b.start - ops.clipEnd(a)) < ops.frameDuration(p) / 2
+      if (sel.length === 2 && sel[0]!.trackId === sel[1]!.trackId) {
+        const [a, b] = sel.sort((x, y) => x.start - y.start) as [Clip, Clip]
+        if (adjacent(a, b)) return { leaveId: a.id, enterId: b.id }
+      }
+      let clip: Clip | undefined = sel[0]
+      if (!clip) {
+        const t = this.playhead
+        const pool = p.clips.filter((c) => !this.isLocked(c.trackId) && p.tracks.find((x) => x.id === c.trackId)?.kind === 'video')
+        clip = pool.find((c) => t >= c.start && t < ops.clipEnd(c)) ?? pool.sort((a, b) => Math.abs(a.start - t) - Math.abs(b.start - t))[0]
+      }
+      if (!clip) return null
+      const t = this.playhead
+      const nearEnd = Math.abs(ops.clipEnd(clip) - t) <= Math.abs(t - clip.start)
+      if (nearEnd) {
+        const n = next(clip)
+        return n && adjacent(clip, n) ? { leaveId: clip.id, enterId: n.id } : { leaveId: clip.id, enterId: null }
+      }
+      const pr = prev(clip)
+      return pr && adjacent(pr, clip) ? { leaveId: pr.id, enterId: clip.id } : { leaveId: null, enterId: clip.id }
+    },
+
+    /** Ctrl+D: transición por defecto en la unión elegida. */
+    applyDefaultTransition(): void {
+      const j = this.junctionTarget()
+      if (!j) return useUiStore().showInfo('Selecciona dos clips contiguos (o un clip) para agregar una transición.')
+      this.applyTransition(j.leaveId, j.enterId)
+    },
+
+    removeTransition(id: string): void {
+      this.run('Eliminar transición', (p) => ops.removeTransition(p, id))
+    },
+    /** Cambio discreto de duración (campo numérico). Devuelve la duración aplicada. */
+    setTransitionDuration(id: string, d: number): void {
+      this.run('Cambiar duración de la transición', (p) => ops.setTransitionDuration(p, id, d))
+    },
+    /** Durante un arrastre: no entra al historial hasta `commit`. */
+    liveTransitionDuration(id: string, d: number): number | null {
+      let applied: number | null = null
+      useProjectStore().mutate((p) => {
+        applied = ops.setTransitionDuration(p, id, d)
+      })
+      return applied
+    },
+    editTransition(id: string, label: string, fn: (t: import('@shared/project-schema').Transition) => void): void {
+      this.run(label, (p) => {
+        const t = p.transitions.find((x) => x.id === id)
+        if (t) fn(t)
+      })
+    },
+    liveTransition(id: string, fn: (t: import('@shared/project-schema').Transition) => void): void {
+      useProjectStore().mutate((p) => {
+        const t = p.transitions.find((x) => x.id === id)
+        if (t) fn(t)
+      })
+    },
+    /** Cambia la transición aplicada manteniendo su duración y audio si es posible. */
+    replaceTransition(id: string, ref: string): void {
+      this.run('Cambiar transición', (p) => {
+        const t = p.transitions.find((x) => x.id === id)
+        if (!t) return
+        t.transitionRef = ref
+        t.params = {}
+      })
+    },
+    /** Rango de la transición en la línea de tiempo (para dibujar su bloque). */
+    rangeOf(id: string): { start: number; end: number } | null {
+      const p = this.project
+      const t = p?.transitions.find((x) => x.id === id)
+      return p && t ? transitionRange(p, t) : null
     },
 
     // ───── Marcadores y navegación ─────

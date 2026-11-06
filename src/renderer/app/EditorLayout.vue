@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onUnmounted, reactive, watch } from 'vue'
+import { onUnmounted, reactive, ref, watch } from 'vue'
 import { engine } from '@/engine/engine'
 import { useUiStore, WORKSPACES } from '@/stores/ui'
 import { useProjectStore } from '@/stores/project'
@@ -13,6 +13,9 @@ import MetersPanel from './panels/MetersPanel.vue'
 import MixerPanel from './panels/MixerPanel.vue'
 import { useTimelineStore } from '@/stores/timeline'
 import TimelinePanel from './timeline/TimelinePanel.vue'
+import Panel from './components/Panel.vue'
+import TransitionsList from './transitions/TransitionsList.vue'
+import TransitionsWorkspace from './transitions/TransitionsWorkspace.vue'
 
 const ui = useUiStore()
 const tlStore = useTimelineStore()
@@ -32,6 +35,11 @@ watch(
 )
 onUnmounted(() => engine.reset())
 
+const leftTab = ref<string>('project')
+const leftTabs = [
+  { id: 'project', label: 'Proyecto' },
+  { id: 'transitions', label: 'Transiciones' }
+]
 const size = reactive({ left: 300, right: 300, bottom: 260, meters: 120, tLeft: 220, tRight: 340, console: 160 })
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v))
 
@@ -61,7 +69,10 @@ function setWorkspace(id: (typeof WORKSPACES)[number]['id']): void {
     <!-- Edición -->
     <div v-if="ui.workspace === 'edit'" class="cols">
       <div class="row top">
-        <div class="pane" :style="{ width: size.left + 'px' }"><ProjectPanel /></div>
+        <div class="pane" :style="{ width: size.left + 'px' }">
+          <ProjectPanel v-show="leftTab === 'project'" :tabs="leftTabs" :model-value="leftTab" @update:model-value="leftTab = $event" />
+          <Panel v-show="leftTab === 'transitions'" title="Transiciones" help="transitions" :tabs="leftTabs" :model-value="leftTab" @update:model-value="leftTab = $event"><TransitionsList /></Panel>
+        </div>
         <Splitter dir="row" @drag="size.left = clamp(size.left + $event, 180, 640)" />
         <div class="pane flex"><MonitorPanel /></div>
         <Splitter dir="row" @drag="size.right = clamp(size.right - $event, 200, 560)" />
@@ -76,17 +87,7 @@ function setWorkspace(id: (typeof WORKSPACES)[number]['id']): void {
     </div>
 
     <!-- Transiciones -->
-    <div v-else-if="ui.workspace === 'transitions'" class="cols">
-      <div class="row top">
-        <div class="pane" :style="{ width: size.tLeft + 'px' }"><PlaceholderPanel title="Transiciones" hint="Lista de transiciones (fase 4)." help="transitions" /></div>
-        <Splitter dir="row" @drag="size.tLeft = clamp(size.tLeft + $event, 160, 480)" />
-        <div class="pane flex"><PlaceholderPanel title="Editor de código" hint="Monaco llega en la fase 4." /></div>
-        <Splitter dir="row" @drag="size.tRight = clamp(size.tRight - $event, 220, 640)" />
-        <div class="pane" :style="{ width: size.tRight + 'px' }"><PlaceholderPanel title="Vista previa y parámetros" hint="progress 0 → 1" /></div>
-      </div>
-      <Splitter dir="column" @drag="size.console = clamp(size.console - $event, 80, 400)" />
-      <div class="row" :style="{ height: size.console + 'px' }"><div class="pane flex"><PlaceholderPanel title="Consola" hint="Sin mensajes." mono /></div></div>
-    </div>
+    <TransitionsWorkspace v-else-if="ui.workspace === 'transitions'" />
 
     <!-- Audio -->
     <div v-else-if="ui.workspace === 'audio'" class="cols">

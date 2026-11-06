@@ -1,0 +1,50 @@
+[
+  {
+    "text": "Disolución pixelada",
+    "link": "/ejemplos/pixel-dissolve"
+  },
+  {
+    "text": "Fundido a blanco",
+    "link": "/ejemplos/dip-to-white"
+  },
+  {
+    "text": "Fundido a negro",
+    "link": "/ejemplos/dip-to-black"
+  },
+  {
+    "text": "Fundido cruzado",
+    "link": "/ejemplos/crossfade"
+  },
+  {
+    "text": "Deslizar horizontal",
+    "link": "/ejemplos/slide-horizontal"
+  },
+  {
+    "text": "Empujar",
+    "link": "/ejemplos/push"
+  },
+  {
+    "text": "Barrido",
+    "link": "/ejemplos/wipe"
+  },
+  {
+    "text": "Iris circular",
+    "link": "/ejemplos/iris-circle"
+  },
+  {
+    "text": "Acercamiento",
+    "link": "/ejemplos/zoom-in"
+  },
+  {
+    "text": "Cuadrícula que se encoge",
+    "link": "/ejemplos/grid-shrink"
+  },
+  {
+    "text": "Giro",
+    "link": "/ejemplos/spin"
+  },
+  {
+    "text": "Persianas",
+    "link": "/ejemplos/blinds"
+  }
+]

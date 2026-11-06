@@ -7,6 +7,9 @@ import { useProjectStore } from '@/stores/project'
 import { useTimelineStore, type Tool } from '@/stores/timeline'
 import { useUiStore, type MenuEntry } from '@/stores/ui'
 import { useWaveStore } from '@/stores/waves'
+import { useTransitionsStore } from '@/stores/transitions'
+import { transitionRange } from '@shared/transition-model'
+import type { Transition } from '@shared/project-schema'
 import Panel from '../components/Panel.vue'
 import Icon from '../components/Icon.vue'
 import ClipView from './ClipView.vue'
@@ -21,6 +24,8 @@ const project = useProjectStore()
 const tl = useTimelineStore()
 const ui = useUiStore()
 const waves = useWaveStore()
+const trs = useTransitionsStore()
+const dropTarget = ref<{ trackId: string; time: number; leaveId: string | null; enterId: string | null } | null>(null)
 
 const scroller = ref<HTMLElement | null>(null)
 const collapsed = reactive(new Set<string>())
@@ -324,6 +329,12 @@ function dropTrack(e: DragEvent): { track: Track; media: MediaItem | undefined }
   return { track, media: ui.dragMediaId ? mediaMap.value.get(ui.dragMediaId) : undefined }
 }
 function onDragOver(e: DragEvent): void {
+  if (ui.dragTransitionRef) {
+    const target = transitionDropTarget(e)
+    dropTarget.value = target
+    if (target) e.preventDefault()
+    return
+  }
   const hit = dropTrack(e)
   const external = e.dataTransfer?.types.includes('Files')
   if (!hit || hit.track.locked) return void (dropPreview.value = null)
@@ -334,6 +345,17 @@ function onDragOver(e: DragEvent): void {
   dropPreview.value = { trackId: hit.track.id, start, dur: hit.media?.kind === 'image' ? 5 : (hit.media?.probe?.duration ?? 3) }
 }
 async function onDrop(e: DragEvent): Promise<void> {
+  if (ui.dragTransitionRef) {
+    const target = dropTarget.value
+    dropTarget.value = null
+    const ref = ui.dragTransitionRef
+    ui.dragTransitionRef = null
+    if (target) {
+      e.preventDefault()
+      tl.applyTransition(target.leaveId, target.enterId, ref)
+    }
+    return
+  }
   const prev = dropPreview.value
   dropPreview.value = null
   tl.snapGuide = null
@@ -358,6 +380,90 @@ async function onDrop(e: DragEvent): Promise<void> {
   }
 }
 
+// ───────── Transiciones ─────────
+
+const transitionsOf = (t: Track): { tr: Transition; start: number; end: number }[] => {
+  const proj = p.value
+  if (!proj) return []
+  const out: { tr: Transition; start: number; end: number }[] = []
+  for (const tr of proj.transitions) {
+    if (tr.trackId !== t.id) continue
+    const r = transitionRange(proj, tr)
+    if (r) out.push({ tr, start: r.start, end: r.end })
+  }
+  return out
+}
+const transitionBroken = (ref: string): boolean => !trs.exists(ref) || Boolean(trs.errorOf(ref))
+
+/** Unión o extremo de clip más cercano al puntero para soltar una transición. */
+function transitionDropTarget(e: DragEvent): { trackId: string; time: number; leaveId: string | null; enterId: string | null } | null {
+  const proj = p.value
+  const track = tracks.value[trackIndexAt(contentPoint(e).y)]
+  if (!proj || !track || track.kind !== 'video' || track.locked) return null
+  const t = timeAt(e)
+  const thr = 16 / zoom.value
+  const fd = 1 / (proj.settings.fps.num / proj.settings.fps.den)
+  const list = trackClips(proj, track.id)
+  let best: { trackId: string; time: number; leaveId: string | null; enterId: string | null; d: number } | null = null
+  for (const c of list) {
+    const end = clipEnd(c)
+    const dEnd = Math.abs(t - end)
+    if (dEnd <= thr && (!best || dEnd < best.d)) {
+      const next = list.find((x) => x.id !== c.id && Math.abs(x.start - end) < fd / 2)
+      best = { trackId: track.id, time: end, leaveId: c.id, enterId: next?.id ?? null, d: dEnd }
+    }
+    const dStart = Math.abs(t - c.start)
+    const hasPrev = list.some((x) => x.id !== c.id && Math.abs(clipEnd(x) - c.start) < fd / 2)
+    if (!hasPrev && dStart <= thr && (!best || dStart < best.d)) best = { trackId: track.id, time: c.start, leaveId: null, enterId: c.id, d: dStart }
+  }
+  return best
+}
+
+function onTransitionDown(e: PointerEvent, tr: Transition): void {
+  if (e.button === 2) return tl.selectTransition(tr.id)
+  if (e.button !== 0) return
+  tl.selectTransition(tr.id)
+}
+
+/** Arrastrar el borde de un bloque cambia la duración: el izquierdo en las que llevan clip saliente, el derecho si solo hay entrante. */
+function startTransitionResize(e: PointerEvent, tr: Transition, side: 'left' | 'right'): void {
+  e.preventDefault()
+  e.stopPropagation()
+  tl.selectTransition(tr.id)
+  const before = tl.snapshot()
+  const r0 = tl.rangeOf(tr.id)
+  if (!r0) return
+  const move = (ev: PointerEvent): void => {
+    const x = quantize(p.value as never, timeAt(ev))
+    const d = side === 'left' ? r0.end - x : x - r0.start
+    tl.liveTransitionDuration(tr.id, d)
+    // Con clip saliente y entrante el borde derecho queda fijo: el rango se recalcula tras mover B
+    r0.start = tl.rangeOf(tr.id)?.start ?? r0.start
+  }
+  const up = (): void => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+    tl.commit('Cambiar duración de la transición', before)
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+}
+
+function transitionMenu(e: MouseEvent, tr: Transition): void {
+  tl.selectTransition(tr.id)
+  ui.openMenu(e, [
+    { label: 'Eliminar transición', shortcut: 'Supr', action: () => tl.removeTransition(tr.id) },
+    {
+      label: 'Editar código',
+      disabled: !trs.exists(tr.transitionRef),
+      action: () => {
+        trs.editing = tr.transitionRef
+        ui.workspace = 'transitions'
+      }
+    }
+  ])
+}
+
 // ───────── Menús contextuales ─────────
 
 function clipMenu(e: MouseEvent, clip: Clip): void {
@@ -376,6 +482,9 @@ function clipMenu(e: MouseEvent, clip: Clip): void {
       disabled: locked || clip.audio.muted || !m?.probe?.hasAudio || m.kind !== 'video' || tl.selectedClips.length !== 1,
       action: () => tl.separateAudio(clip.id)
     },
+    { label: 'Agregar transición al inicio', disabled: locked || m?.kind === 'audio', action: () => tl.applyTransition(null, clip.id) },
+    { label: 'Agregar transición al final', disabled: locked || m?.kind === 'audio', action: () => tl.applyTransition(clip.id, null) },
+    { separator: true, label: '' },
     { label: clip.enabled ? 'Deshabilitar' : 'Habilitar', shortcut: 'Mayús+E', disabled: locked, action: () => tl.toggleEnabled() },
     { separator: true, label: '' },
     { label: 'Restablecer transformación', disabled: true },
@@ -498,7 +607,7 @@ function clipsOf(t: Track): Clip[] {
     </template>
 
     <div v-if="p" class="tl" data-testid="timeline">
-      <div ref="scroller" class="scroller" :class="`tool-${tl.tool}`" @wheel="onWheel" @dragover="onDragOver" @dragleave="dropPreview = null" @drop="onDrop">
+      <div ref="scroller" class="scroller" :class="`tool-${tl.tool}`" @wheel="onWheel" @dragover="onDragOver" @dragleave="dropPreview = null; dropTarget = null" @drop="onDrop">
         <div class="content" :style="{ width: HEADER_W + contentW + 'px', height: Math.max(totalH, 1) + 'px' }">
           <div class="ruler-row">
             <div class="corner mono" data-testid="timecode">{{ tc(tl.playhead) }}</div>
@@ -532,6 +641,22 @@ function clipsOf(t: Track): Clip[] {
                 @down="(ev: PointerEvent, z: Zone) => onClipDown(ev, c, z)"
                 @menu="clipMenu($event, c)"
               />
+              <div
+                v-for="x in transitionsOf(t)"
+                :key="x.tr.id"
+                class="tblock"
+                :class="{ selected: tl.selectedTransition === x.tr.id, broken: transitionBroken(x.tr.transitionRef) }"
+                :style="{ left: x.start * zoom + 'px', width: Math.max(8, (x.end - x.start) * zoom) + 'px' }"
+                :title="trs.errorOf(x.tr.transitionRef) ?? trs.nameOf(x.tr.transitionRef)"
+                data-testid="transition-block"
+                @pointerdown="onTransitionDown($event, x.tr)"
+                @contextmenu.stop="transitionMenu($event, x.tr)"
+              >
+                <span class="tname">{{ trs.exists(x.tr.transitionRef) ? trs.nameOf(x.tr.transitionRef) : 'Falta: ' + x.tr.transitionRef }}</span>
+                <div v-if="x.tr.leaveClipId" class="tedge left" @pointerdown="startTransitionResize($event, x.tr, 'left')" />
+                <div v-else class="tedge right" @pointerdown="startTransitionResize($event, x.tr, 'right')" />
+              </div>
+              <div v-if="dropTarget?.trackId === t.id" class="drop-junction" :style="{ left: dropTarget.time * zoom + 'px' }" data-testid="drop-junction" />
               <div v-if="dropPreview?.trackId === t.id" class="drop-ghost" :style="{ left: dropPreview.start * zoom + 'px', width: Math.max(4, dropPreview.dur * zoom) + 'px' }" />
             </div>
           </div>
@@ -568,6 +693,15 @@ function clipsOf(t: Track): Clip[] {
 .head-cell { position: sticky; left: 0; z-index: 6; flex: none; width: 170px; }
 .lane { position: relative; flex: none; background: #1f1f1f; }
 .row:nth-child(odd) .lane { background: #202020; }
+.tblock { position: absolute; top: 2px; bottom: 3px; z-index: 4; border-radius: 2px; overflow: hidden; cursor: default; background-color: rgba(201, 180, 88, 0.55); background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.22) 0 5px, transparent 5px 10px); border: 1px solid var(--transition); }
+.tblock.selected { border-color: #fff; background-color: rgba(201, 180, 88, 0.8); }
+.tblock.broken { background-color: rgba(229, 72, 77, 0.55); border-color: var(--danger); }
+.tname { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; font-weight: 600; color: #fff; text-shadow: 0 0 2px #000; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.tedge { position: absolute; top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
+.tedge.left { left: 0; }
+.tedge.right { right: 0; }
+.tedge:hover { background: rgba(255, 255, 255, 0.5); }
+.drop-junction { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: var(--accent); box-shadow: 0 0 8px var(--accent); z-index: 6; pointer-events: none; }
 .drop-ghost { position: absolute; top: 2px; bottom: 3px; background: rgba(45, 140, 235, 0.35); border: 1px dashed var(--accent); border-radius: 2px; pointer-events: none; }
 .playhead { position: absolute; top: 0; bottom: 0; width: 0; z-index: 5; pointer-events: none; border-left: 1px solid var(--accent); }
 .ph-cap { position: absolute; top: 0; margin-left: -6px; z-index: 8; pointer-events: none; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 9px solid var(--accent); }

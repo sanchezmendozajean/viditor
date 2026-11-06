@@ -36,6 +36,8 @@ export const useUiStore = defineStore('ui', {
     maximized: false,
     /** Medio arrastrado desde el panel Proyecto hacia la línea de tiempo. */
     dragMediaId: null as string | null,
+    /** Transición arrastrada desde el panel Transiciones (ref) */
+    dragTransitionRef: null as string | null,
     contextMenu: null as { x: number; y: number; items: MenuEntry[] } | null
   }),
   actions: {

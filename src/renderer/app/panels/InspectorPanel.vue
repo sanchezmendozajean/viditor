@@ -4,6 +4,7 @@ import { useProjectStore } from '@/stores/project'
 import { useTimelineStore } from '@/stores/timeline'
 import Panel from '../components/Panel.vue'
 import ClipInspector from './ClipInspector.vue'
+import TransitionInspector from './TransitionInspector.vue'
 
 const project = useProjectStore()
 const tl = useTimelineStore()
@@ -13,7 +14,8 @@ const track = computed(() => project.project?.tracks.find((t) => t.id === tl.sel
 
 <template>
   <Panel title="Inspector" help="project">
-    <ClipInspector v-if="project.project && tl.selection.length > 0" />
+    <TransitionInspector v-if="project.project && tl.selectedTransition" />
+    <ClipInspector v-else-if="project.project && tl.selection.length > 0" />
     <div v-else-if="project.project && track" class="insp" data-testid="inspector-track">
       <h3>Pista: {{ track.name }}</h3>
       <dl>

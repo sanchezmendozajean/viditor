@@ -26,7 +26,7 @@ export function createMainWindow(): BrowserWindow {
       autoplayPolicy: 'no-user-gesture-required'
     }
   })
-  hardenWindow(win, 'file://')
+  hardenWindow(win, 'viditor-app://')
   win.once('ready-to-show', () => win.show())
   const sendMax = (): void => {
     if (!win.isDestroyed()) win.webContents.send(IPC.windowMaximizedChanged, win.isMaximized())
@@ -36,12 +36,14 @@ export function createMainWindow(): BrowserWindow {
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (devUrl) void win.loadURL(devUrl)
-  else void win.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+  else void win.loadURL('viditor-app://app/index.html')
   return win
 }
 
 export function openHelpWindow(topic: string = 'index'): void {
-  const path = topic in HELP_TOPICS ? HELP_TOPICS[topic as HelpTopic] : HELP_TOPICS.index
+  // Un tema conocido, o una ruta de la documentación (p. ej. la referencia de un símbolo desde Monaco con F1)
+  const safe = /^\/[A-Za-z0-9_\-./#]*$/.test(topic) && !topic.includes('..')
+  const path = topic in HELP_TOPICS ? HELP_TOPICS[topic as HelpTopic] : safe ? topic : HELP_TOPICS.index
   const url = `viditor-docs://docs${path}`
   if (helpWindow && !helpWindow.isDestroyed()) {
     void helpWindow.loadURL(url)

@@ -5,6 +5,7 @@
  */
 import type { Clip, MediaItem, Project, ProjectSettings, Track } from './project-schema'
 import { clipEnd } from './timeline-ops'
+import { transitionAt, transitionAudioFactor, transitionTiming, type AudioMode } from './transition-model'
 
 /** Matriz afín: x = a·u + c·v + e ; y = b·u + d·v + f, con (u,v) ∈ [0,1]² sobre el cuadro del clip. */
 export type Matrix = [a: number, b: number, c: number, d: number, e: number, f: number]
@@ -21,13 +22,38 @@ export interface DrawOp {
   opacity: number
 }
 
+/**
+ * Transición activa en una pista: sus dos capas (ya con su transformación base) y lo necesario para pedir
+ * la display list al worker. Vista previa y exportación comparten exactamente esta descripción.
+ */
+export interface TransitionOp {
+  kind: 'transition'
+  transitionId: string
+  trackId: string
+  ref: string
+  params: Record<string, unknown>
+  seed: number
+  duration: number
+  progress: number
+  frame: number
+  totalFrames: number
+  leave: DrawOp | null
+  enter: DrawOp | null
+}
+
+export type FrameOp = DrawOp | TransitionOp
+
 export interface Frame {
   time: number
   width: number
   height: number
   background: string
-  ops: DrawOp[]
+  /** De atrás hacia delante */
+  ops: FrameOp[]
 }
+
+/** Solo las capas de clip sueltas (sin las transiciones). */
+export const drawOps = (f: Frame): DrawOp[] => f.ops.filter((o): o is DrawOp => o.kind !== 'transition')
 
 const RAD = Math.PI / 180
 
@@ -138,37 +164,68 @@ export function activeClipsAt(p: Project, t: number): { clip: Clip; track: Track
   return out
 }
 
+function drawOpFor(p: Project, clip: Clip, media: MediaItem, t: number): DrawOp {
+  const g = clipGeometry(p.settings, clip, media)
+  const c = clip.transform.crop
+  const u0 = c.left / g.sw
+  const v0 = c.top / g.sh
+  const u1 = 1 - c.right / g.sw
+  const v1 = 1 - c.bottom / g.sh
+  return {
+    clipId: clip.id,
+    mediaId: media.id,
+    kind: media.kind === 'image' ? 'image' : 'video',
+    sourceTime: clip.in + (t - clip.start) * clip.speed,
+    matrix: clipMatrix(p.settings, clip, g),
+    uv: [clip.transform.flipH ? u1 : u0, clip.transform.flipV ? v1 : v0, clip.transform.flipH ? u0 : u1, clip.transform.flipV ? v0 : v1],
+    opacity: clip.transform.opacity
+  }
+}
+
 /** Frame de vídeo en el tiempo `t`: capas de abajo (fondo) hacia arriba (frente). */
 export function buildFrame(p: Project, t: number): Frame {
-  const s = p.settings
-  const ops: DrawOp[] = []
+  const ops: FrameOp[] = []
   const mediaById = new Map(p.media.map((m) => [m.id, m]))
+  const visual = (clip: Clip | undefined): { clip: Clip; media: MediaItem } | null => {
+    if (!clip || !clip.enabled) return null
+    const media = mediaById.get(clip.mediaId)
+    return media && media.kind !== 'audio' ? { clip, media } : null
+  }
   // p.tracks va de arriba a abajo; el vídeo se compone del fondo al frente.
   for (const track of [...p.tracks].reverse()) {
     if (track.kind !== 'video' || track.hidden) continue
-    for (const clip of p.clips) {
-      if (clip.trackId !== track.id || !clip.enabled) continue
-      if (t < clip.start - 1e-9 || t >= clipEnd(clip) - 1e-9) continue
-      const media = mediaById.get(clip.mediaId)
-      if (!media || media.kind === 'audio') continue
-      const g = clipGeometry(s, clip, media)
-      const c = clip.transform.crop
-      const u0 = c.left / g.sw
-      const v0 = c.top / g.sh
-      const u1 = 1 - c.right / g.sw
-      const v1 = 1 - c.bottom / g.sh
+    const active = transitionAt(p, track.id, t)
+    const inTransition = new Set<string>()
+    if (active) {
+      const { tr, range } = active
+      const a = visual(p.clips.find((c) => c.id === tr.leaveClipId))
+      const b = visual(p.clips.find((c) => c.id === tr.enterClipId))
+      if (tr.leaveClipId) inTransition.add(tr.leaveClipId)
+      if (tr.enterClipId) inTransition.add(tr.enterClipId)
+      const timing = transitionTiming(p, range, t)
       ops.push({
-        clipId: clip.id,
-        mediaId: media.id,
-        kind: media.kind === 'image' ? 'image' : 'video',
-        sourceTime: clip.in + (t - clip.start) * clip.speed,
-        matrix: clipMatrix(s, clip, g),
-        uv: [clip.transform.flipH ? u1 : u0, clip.transform.flipV ? v1 : v0, clip.transform.flipH ? u0 : u1, clip.transform.flipV ? v0 : v1],
-        opacity: clip.transform.opacity
+        kind: 'transition',
+        transitionId: tr.id,
+        trackId: track.id,
+        ref: tr.transitionRef,
+        params: tr.params,
+        seed: tr.seed,
+        duration: tr.duration,
+        progress: timing.progress,
+        frame: timing.frame,
+        totalFrames: timing.totalFrames,
+        leave: a ? drawOpFor(p, a.clip, a.media, t) : null,
+        enter: b ? drawOpFor(p, b.clip, b.media, t) : null
       })
     }
+    for (const clip of p.clips) {
+      if (clip.trackId !== track.id || inTransition.has(clip.id)) continue
+      if (t < clip.start - 1e-9 || t >= clipEnd(clip) - 1e-9) continue
+      const v = visual(clip)
+      if (v) ops.push(drawOpFor(p, v.clip, v.media, t))
+    }
   }
-  return { time: t, width: s.width, height: s.height, background: s.background, ops }
+  return { time: t, width: p.settings.width, height: p.settings.height, background: p.settings.background, ops }
 }
 
 // ───────── Audio ─────────
@@ -199,4 +256,9 @@ export function trackGain(p: Project, track: Track): number {
 /** clip × pista × master (specs/04 §Volumen). */
 export function finalGain(p: Project, clip: Clip, track: Track, t: number): number {
   return clipGainAt(clip, t) * trackGain(p, track) * p.settings.masterVolume
+}
+
+/** Ganancia del clip incluyendo fundidos y el efecto de las transiciones sobre el audio (crossfade / corte / ninguno). */
+export function clipGainWithTransitions(p: Project, clip: Clip, t: number, modeOf: (ref: string) => AudioMode | undefined): number {
+  return clipGainAt(clip, t) * transitionAudioFactor(p, clip.id, t, modeOf)
 }

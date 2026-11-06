@@ -8,6 +8,7 @@ import { projectSchema, settingsSchema, type Project } from '@shared/project-sch
 import { ProjectFormatError } from '@shared/migrations'
 import { ProjectService } from './services/project-service'
 import { ensureProxies } from './services/proxy-service'
+import type { TransitionRegistry } from './services/transition-registry'
 import type { MediaItem } from '@shared/project-schema'
 import { ImportService } from './services/import-service'
 import { computeWaveform, JobQueue, makeThumbnail } from './services/media-service'
@@ -36,7 +37,7 @@ function windowOf(e: IpcMainInvokeEvent | Electron.IpcMainEvent): BrowserWindow 
   return BrowserWindow.fromWebContents(e.sender)
 }
 
-export function registerIpc(projects: ProjectService): void {
+export function registerIpc(projects: ProjectService, registry: TransitionRegistry): void {
   const imports = new ImportService()
 
   ipcMain.on(IPC.windowMinimize, (e) => windowOf(e)?.minimize())
@@ -99,12 +100,15 @@ export function registerIpc(projects: ProjectService): void {
   ipcMain.handle(IPC.projectCreate, (_e, req: NewProjectRequest) =>
     guard(async () => {
       const settings = settingsSchema.parse(req.settings)
-      return projects.create({ name: String(req.name), parentDir: String(req.parentDir), settings })
+      const created = await projects.create({ name: String(req.name), parentDir: String(req.parentDir), settings })
+      void registry.watch()
+      return created
     })
   )
   ipcMain.handle(IPC.projectOpen, (e, file: string) =>
     guard(async () => {
       const opened = await projects.open(String(file))
+      void registry.watch()
       startProxies(e.sender, opened.project.media)
       return opened
     })
@@ -120,7 +124,10 @@ export function registerIpc(projects: ProjectService): void {
   ipcMain.handle(IPC.projectAutosave, (_e, project: Project) =>
     guard(async () => ({ savedAt: await projects.autosave(projectSchema.parse(project)) }))
   )
-  ipcMain.handle(IPC.projectClose, () => projects.close())
+  ipcMain.handle(IPC.projectClose, () => {
+    projects.close()
+    void registry.watch()
+  })
 
   ipcMain.handle(IPC.mediaPlan, (_e, paths: string[]) =>
     guard(async () => {
@@ -174,6 +181,20 @@ export function registerIpc(projects: ProjectService): void {
     if (!dir) return
     const abs = projects.resolveMediaPath(dir, String(path))
     if (existsSync(abs)) shell.showItemInFolder(abs)
+  })
+
+  ipcMain.handle(IPC.transitionsList, () => registry.list())
+  ipcMain.handle(IPC.transitionsSave, (_e, ref: string, source: string) =>
+    guard(async () => {
+      await registry.save(String(ref), String(source))
+      return null
+    })
+  )
+  ipcMain.handle(IPC.transitionsCreate, () => guard(() => registry.create()))
+  ipcMain.handle(IPC.transitionsDuplicate, (_e, ref: string) => guard(() => registry.duplicate(String(ref))))
+  ipcMain.handle(IPC.transitionsCopyToProject, (_e, ref: string) => guard(() => registry.copyToProject(String(ref))))
+  ipcMain.on(IPC.transitionsOpenFolder, (_e, origin: string) => {
+    if (origin === 'builtin' || origin === 'user' || origin === 'project') void registry.openFolder(origin)
   })
 
   ipcMain.on(IPC.helpOpen, (_e, topic?: string) => openHelpWindow(typeof topic === 'string' ? topic : 'index'))

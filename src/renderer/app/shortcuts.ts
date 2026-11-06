@@ -21,6 +21,9 @@ export function handleTimelineKey(e: KeyboardEvent): boolean {
       case 'y':
         tl.redo()
         return true
+      case 'd':
+        tl.applyDefaultTransition()
+        return true
       case 'k':
         tl.splitAtPlayhead()
         return true
@@ -53,7 +56,8 @@ export function handleTimelineKey(e: KeyboardEvent): boolean {
       return false
     case 'Delete':
     case 'Backspace':
-      tl.deleteSelection(e.shiftKey)
+      if (tl.selectedTransition) tl.removeTransition(tl.selectedTransition)
+      else tl.deleteSelection(e.shiftKey)
       return true
     case 'Home': tl.setPlayhead(0); return true
     case 'End': tl.setPlayhead(tl.duration); return true

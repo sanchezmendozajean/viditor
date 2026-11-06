@@ -49,6 +49,21 @@ export interface Waveform {
   peaks: number[]
 }
 
+export type TransitionOrigin = 'builtin' | 'user' | 'project'
+
+/** Un archivo .js de transición descubierto por el registro (el código lo evalúa el worker del renderer). */
+export interface TransitionFile {
+  /** builtin:id · user:id · project:id */
+  ref: string
+  /** Nombre del archivo sin .js; debe coincidir con meta.id */
+  id: string
+  origin: TransitionOrigin
+  path: string
+  source: string
+  readOnly: boolean
+  mtime: number
+}
+
 export interface BackgroundTask {
   id: string
   label: string
@@ -98,6 +113,18 @@ export interface ViditorApi {
     /** URL de reproducción de un medio: original o su proxy. */
     sourceUrl(mediaId: string, proxy: boolean): string
   }
+  transitions: {
+    list(): Promise<TransitionFile[]>
+    save(ref: string, source: string): Promise<IpcResult<null>>
+    /** Nueva transición del usuario desde la plantilla */
+    create(): Promise<IpcResult<TransitionFile>>
+    /** Copia una transición (p. ej. integrada) a la carpeta del usuario para poder editarla */
+    duplicate(ref: string): Promise<IpcResult<TransitionFile>>
+    copyToProject(ref: string): Promise<IpcResult<TransitionFile>>
+    openFolder(origin: TransitionOrigin): void
+    /** Cambios en disco (recarga en caliente) */
+    onChanged(cb: (list: TransitionFile[]) => void): () => void
+  }
   help: {
     open(topic?: string): void
   }
@@ -129,6 +156,13 @@ export const IPC = {
   mediaWaveform: 'media:waveform',
   mediaProxyReady: 'media:proxy-ready',
   mediaReveal: 'media:reveal',
+  transitionsList: 'transitions:list',
+  transitionsSave: 'transitions:save',
+  transitionsCreate: 'transitions:create',
+  transitionsDuplicate: 'transitions:duplicate',
+  transitionsCopyToProject: 'transitions:copy-to-project',
+  transitionsOpenFolder: 'transitions:open-folder',
+  transitionsChanged: 'transitions:changed',
   helpOpen: 'help:open',
   appMenuAction: 'app:menu-action',
   appOpenExternal: 'app:open-external'

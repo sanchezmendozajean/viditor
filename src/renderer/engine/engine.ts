@@ -1,4 +1,4 @@
-import { activeClipsAt, buildFrame, type Frame } from '@shared/render-model'
+import { activeClipsAt, buildFrame, type DrawOp, type Frame, type TransitionOp } from '@shared/render-model'
 import type { Clip, Project, Track } from '@shared/project-schema'
 import { clipEnd, frameDuration } from '@shared/timeline-ops'
 import { useProjectStore } from '@/stores/project'
@@ -7,6 +7,20 @@ import { QUALITY_SCALE, useTimelinePlayback, type Quality } from '@/stores/playb
 import { AudioGraph } from './audio'
 import { Compositor } from './compositor'
 import { isReady, seekTo, SourceProvider, type SourceEntry } from './sources'
+import { transitionHost, type Env } from './transition-host'
+import { useTransitionsStore } from '@/stores/transitions'
+
+/** Todas las capas de clip de un frame, incluidas las dos de cada transición. */
+function clipLayers(frame: Frame): DrawOp[] {
+  const out: DrawOp[] = []
+  for (const op of frame.ops) {
+    if (op.kind === 'transition') {
+      if (op.leave) out.push(op.leave)
+      if (op.enter) out.push(op.enter)
+    } else out.push(op)
+  }
+  return out
+}
 
 const PREWARM_S = 1.5
 
@@ -100,11 +114,16 @@ export class Engine {
   private draw(frame: Frame): void {
     const comp = this.compositor
     if (!comp) return
-    comp.draw(frame, (op) => {
-      const e = this.sources.all.find((x) => x.clipId === op.clipId)
-      return e && isReady(e.el) ? e.el : null
-    })
-    comp.prune(new Set(frame.ops.map((o) => o.clipId)))
+    const env = this.env()
+    comp.draw(
+      frame,
+      (op) => {
+        const e = this.sources.all.find((x) => x.clipId === op.clipId)
+        return e && isReady(e.el) ? e.el : null
+      },
+      (op) => (env ? transitionHost.peek(op, env) : null)
+    )
+    comp.prune(new Set(clipLayers(frame).map((o) => o.clipId)))
   }
 
   /** Frame exacto en `t` (pausa, scrubbing, marcha atrás). La última petición gana. */
@@ -116,12 +135,15 @@ export class Engine {
     const frame = buildFrame(p, t)
     const clipById = new Map(p.clips.map((c) => [c.id, c]))
     const waits: Promise<void>[] = []
-    for (const op of frame.ops) {
+    for (const op of clipLayers(frame)) {
       const clip = clipById.get(op.clipId)
       const e = clip ? this.entryFor(clip) : null
       if (e && e.el instanceof HTMLVideoElement) waits.push(seekTo(e.el, op.sourceTime))
     }
     await Promise.all(waits)
+    // Las display lists de las transiciones las calcula el worker (con caché): se esperan antes de dibujar
+    const env = this.env()
+    if (env) await Promise.all(frame.ops.filter((o): o is TransitionOp => o.kind === 'transition').map((o) => transitionHost.displayList(o, env)))
     if (my !== this.token) return
     this.draw(frame)
   }
@@ -221,8 +243,11 @@ export class Engine {
       this.busy = true
       void this.renderAt(t).finally(() => (this.busy = false))
     }
-    this.audio.update(p, t, pb.rate > 0 ? activeMap : new Map())
-    if (pb.rate > 0) this.draw(frame)
+    this.audio.update(p, t, pb.rate > 0 ? activeMap : new Map(), useTransitionsStore().modeOf)
+    if (pb.rate > 0) {
+      this.prefetchTransitions(p, t, frame)
+      this.draw(frame)
+    }
     this.raf = requestAnimationFrame(this.tick)
   }
 
@@ -257,6 +282,29 @@ export class Engine {
       if (e && !e.primed && e.el instanceof HTMLVideoElement) {
         e.primed = true
         void seekTo(e.el, c.in, 500)
+      }
+    }
+  }
+
+  // ───────── Transiciones ─────────
+
+  private env(): Env | null {
+    const p = this.project
+    return p ? { width: p.settings.width, height: p.settings.height, fps: p.settings.fps.num / p.settings.fps.den } : null
+  }
+
+  /**
+   * Durante la reproducción las display lists se piden con antelación (los 4 frames siguientes) y las
+   * que faltan en el frame actual se solicitan ya: el worker responde antes del siguiente dibujo.
+   */
+  private prefetchTransitions(p: Project, t: number, frame: Frame): void {
+    const env = this.env()
+    if (!env || p.transitions.length === 0) return
+    for (const op of frame.ops) if (op.kind === 'transition' && !transitionHost.peek(op, env)) void transitionHost.displayList(op, env)
+    const fd = 1 / env.fps
+    for (let k = 1; k <= 4; k++) {
+      for (const op of buildFrame(p, t + k * fd).ops) {
+        if (op.kind === 'transition' && !transitionHost.peek(op, env)) void transitionHost.displayList(op, env)
       }
     }
   }

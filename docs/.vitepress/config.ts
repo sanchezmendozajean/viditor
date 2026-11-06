@@ -1,4 +1,18 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { defineConfig } from 'vitepress'
+
+// El índice de ejemplos y la referencia de la API los generan scripts/docs-examples.mjs y scripts/docs-api.mjs
+const here = import.meta.dirname
+const examples: { text: string; link: string }[] = existsSync(join(here, '..', 'ejemplos', 'sidebar.json')) ? JSON.parse(readFileSync(join(here, '..', 'ejemplos', 'sidebar.json'), 'utf8')) : []
+const apiDir = join(here, '..', 'api')
+const apiGroup = (dir: string, text: string): { text: string; collapsed: boolean; items: { text: string; link: string }[] } | null => {
+  const full = join(apiDir, dir)
+  if (!existsSync(full)) return null
+  const items = readdirSync(full).filter((f) => f.endsWith('.md')).sort().map((f) => ({ text: f.slice(0, -3), link: `/api/${dir}/${f.slice(0, -3)}` }))
+  return { text, collapsed: false, items }
+}
+const apiSidebar = [apiGroup('interfaces', 'Interfaces'), apiGroup('type-aliases', 'Tipos'), apiGroup('variables', 'Globales'), apiGroup('functions', 'Funciones')].filter(Boolean) as { text: string; collapsed: boolean; items: { text: string; link: string }[] }[]
 
 // Dos compilaciones (specs/09): "app" → resources/docs (base "/"), "pages" → GitHub Pages (base "/viditor/").
 const target = process.env.VITEPRESS_TARGET === 'app' ? 'app' : 'pages'
@@ -37,7 +51,24 @@ export default defineConfig({
           ]
         }
       ],
-      '/transiciones/': [{ text: 'Transiciones', items: [{ text: 'Tu primera transición', link: '/transiciones/primera-transicion' }] }]
+      '/transiciones/': [
+        {
+          text: 'Transiciones',
+          items: [
+            { text: 'Tu primera transición', link: '/transiciones/primera-transicion' },
+            { text: 'Anatomía de un archivo', link: '/transiciones/anatomia' },
+            { text: 'La regla de oro', link: '/transiciones/regla-de-oro' },
+            { text: 'Coordenadas, pivote y orden', link: '/transiciones/coordenadas' },
+            { text: 'Vocabulario', link: '/transiciones/vocabulario' },
+            { text: 'Recetas', link: '/transiciones/recetas' },
+            { text: 'Depuración', link: '/transiciones/depuracion' },
+            { text: 'Rendimiento', link: '/transiciones/rendimiento' },
+            { text: 'Compartir transiciones', link: '/transiciones/compartir' }
+          ]
+        }
+      ],
+      '/api/': [{ text: 'Referencia de la API', items: [{ text: 'Portada', link: '/api/' }] }, ...apiSidebar],
+      '/ejemplos/': [{ text: 'Transiciones integradas', items: [{ text: 'Todas', link: '/ejemplos/' }, ...examples] }]
     },
     outline: { label: 'En esta página' },
     docFooter: { prev: 'Anterior', next: 'Siguiente' },

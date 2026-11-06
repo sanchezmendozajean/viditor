@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { IPC, type BackgroundTask, type ViditorApi } from '../shared/ipc'
+import { IPC, type BackgroundTask, type TransitionFile, type ViditorApi } from '../shared/ipc'
 
 function subscribe<T>(channel: string, cb: (value: T) => void): () => void {
   const listener = (_e: Electron.IpcRendererEvent, value: T): void => cb(value)
@@ -40,6 +40,15 @@ const api: ViditorApi = {
     onTask: (cb) => subscribe<BackgroundTask>(IPC.mediaTask, cb),
     onProxyReady: (cb) => subscribe<{ mediaId: string; path: string }>(IPC.mediaProxyReady, cb),
     sourceUrl: (mediaId, proxy) => `viditor-media://${proxy ? 'proxy' : 'file'}/${encodeURIComponent(mediaId)}`
+  },
+  transitions: {
+    list: () => ipcRenderer.invoke(IPC.transitionsList),
+    save: (ref, source) => ipcRenderer.invoke(IPC.transitionsSave, ref, source),
+    create: () => ipcRenderer.invoke(IPC.transitionsCreate),
+    duplicate: (ref) => ipcRenderer.invoke(IPC.transitionsDuplicate, ref),
+    copyToProject: (ref) => ipcRenderer.invoke(IPC.transitionsCopyToProject, ref),
+    openFolder: (origin) => ipcRenderer.send(IPC.transitionsOpenFolder, origin),
+    onChanged: (cb) => subscribe<TransitionFile[]>(IPC.transitionsChanged, cb)
   },
   help: { open: (topic) => ipcRenderer.send(IPC.helpOpen, topic) },
   app: {

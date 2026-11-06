@@ -97,7 +97,7 @@ describe('geometría y matriz', () => {
     const c = clip(p, 'm1', 'v1', 0, 'c')
     c.transform.crop = { left: 192, top: 108, right: 0, bottom: 0 }
     c.transform.flipH = true
-    const f = rm.buildFrame(p, 1)
+    const f = { ops: rm.drawOps(rm.buildFrame(p, 1)) }
     near(f.ops[0]!.uv, [1, 0.1, 0.1, 1])
   })
 })
@@ -107,11 +107,11 @@ describe('buildFrame', () => {
     const p = project()
     clip(p, 'm1', 'v1', 0, 'low')
     clip(p, 'm1', 'v2', 2, 'high')
-    expect(rm.buildFrame(p, 3).ops.map((o) => o.clipId)).toEqual(['low', 'high'])
+    expect(rm.drawOps(rm.buildFrame(p, 3)).map((o) => o.clipId)).toEqual(['low', 'high'])
     p.tracks[0]!.hidden = true
-    expect(rm.buildFrame(p, 3).ops.map((o) => o.clipId)).toEqual(['low'])
+    expect(rm.drawOps(rm.buildFrame(p, 3)).map((o) => o.clipId)).toEqual(['low'])
     p.clips.find((c) => c.id === 'low')!.enabled = false
-    expect(rm.buildFrame(p, 3).ops).toEqual([])
+    expect(rm.drawOps(rm.buildFrame(p, 3))).toEqual([])
   })
 
   it('calcula el tiempo fuente y no incluye audio ni clips fuera de rango', () => {
@@ -120,17 +120,17 @@ describe('buildFrame', () => {
     c.in = 2
     c.out = 6
     clip(p, 'm3', 'a1', 0, 'aud')
-    expect(rm.buildFrame(p, 4.9).ops).toEqual([])
-    expect(rm.buildFrame(p, 6).ops[0]!.sourceTime).toBeCloseTo(3)
-    expect(rm.buildFrame(p, 9).ops).toEqual([]) // fin exclusivo
-    expect(rm.buildFrame(p, 6).ops).toHaveLength(1)
+    expect(rm.drawOps(rm.buildFrame(p, 4.9))).toEqual([])
+    expect(rm.drawOps(rm.buildFrame(p, 6))[0]!.sourceTime).toBeCloseTo(3)
+    expect(rm.drawOps(rm.buildFrame(p, 9))).toEqual([]) // fin exclusivo
+    expect(rm.drawOps(rm.buildFrame(p, 6))).toHaveLength(1)
   })
 
   it('opacidad pasa tal cual', () => {
     const p = project()
     const c = clip(p, 'm1', 'v1', 0, 'c')
     c.transform.opacity = 0.4
-    expect(rm.buildFrame(p, 1).ops[0]!.opacity).toBe(0.4)
+    expect(rm.drawOps(rm.buildFrame(p, 1))[0]!.opacity).toBe(0.4)
   })
 })
 

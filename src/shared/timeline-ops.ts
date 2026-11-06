@@ -3,7 +3,8 @@
  * comandos del renderer toma una instantánea antes/después para deshacer/rehacer.
  * Tiempos en segundos; siempre se cuantizan al frame del proyecto cuando proviene del usuario.
  */
-import type { Clip, MediaItem, Project, Track } from './project-schema'
+import type { Clip, MediaItem, Project, Track, Transition } from './project-schema'
+import { lockedEdges, maxTransitionDuration, minClipDuration, transitionRange, transitionsOfClip } from './transition-model'
 
 export const EPS = 1e-6
 
@@ -70,7 +71,9 @@ export function makeClip(p: Project, m: MediaItem, trackId: string, start: numbe
 }
 
 function removeTransitionsOf(p: Project, clipIds: Set<string>): void {
-  p.transitions = p.transitions.filter((x) => !clipIds.has(x.leaveClipId) && !clipIds.has(x.enterClipId))
+  p.transitions = p.transitions.filter(
+    (x) => !(x.leaveClipId && clipIds.has(x.leaveClipId)) && !(x.enterClipId && clipIds.has(x.enterClipId))
+  )
 }
 
 /**
@@ -155,6 +158,10 @@ export function splitClip(p: Project, clipId: string, t: number, newId: IdGen): 
   if (!c) return null
   const fd = frameDuration(p)
   if (t <= c.start + fd / 2 || t >= clipEnd(c) - fd / 2) return null
+  for (const tr of transitionsOfClip(p, c.id)) {
+    const r = transitionRange(p, tr)
+    if (r && t > r.start - fd / 2 && t < r.end + fd / 2) return null // dentro del solape se cambia la transición, no se corta
+  }
   const right: Clip = clone(c)
   right.id = newId('c_')
   right.start = t
@@ -175,19 +182,22 @@ export function trimClip(p: Project, clipId: string, edge: 'start' | 'end', time
   const fd = frameDuration(p)
   const m = p.media.find((x) => x.id === c.mediaId)
   const limit = mediaLimit(m)
+  const locked = lockedEdges(p, c.id)
+  if ((edge === 'start' && locked.start) || (edge === 'end' && locked.end)) return null // se cambia desde la transición
+  const minDur = Math.max(fd, minClipDuration(p, c))
   const siblings = trackClips(p, c.trackId).filter((x) => x.id !== c.id)
   const prevEnd = siblings.filter((x) => clipEnd(x) <= c.start + EPS).reduce((a, x) => Math.max(a, clipEnd(x)), 0)
   const nextStart = siblings.filter((x) => x.start >= clipEnd(c) - EPS).reduce((a, x) => Math.min(a, x.start), Infinity)
   if (edge === 'start') {
     const min = Math.max(prevEnd, c.start - c.in)
-    const max = clipEnd(c) - fd
+    const max = clipEnd(c) - minDur
     const s = Math.min(max, Math.max(min, time))
     c.in += s - c.start
     c.start = s
     return s
   }
   const max = Math.min(nextStart, c.start + (limit - c.in))
-  const e = Math.max(c.start + fd, Math.min(max, time))
+  const e = Math.max(c.start + minDur, Math.min(max, time))
   c.out = c.in + (e - c.start)
   return e
 }
@@ -203,7 +213,11 @@ export function deleteClips(p: Project, ids: string[], ripple: boolean): void {
     for (const [trackId, list] of byTrack) {
       // De derecha a izquierda para que los desplazamientos no invaliden posiciones.
       for (const d of list.sort((a, b) => b.start - a.start)) {
-        const dur = clipDuration(d)
+        // Lo que se cierra es el tramo exclusivo del clip: sin los solapes de sus transiciones
+        const overlap = transitionsOfClip(p, d.id)
+          .filter((x) => x.leaveClipId && x.enterClipId)
+          .reduce((a, x) => a + x.duration, 0)
+        const dur = clipDuration(d) - overlap
         for (const c of p.clips) if (c.trackId === trackId && !set.has(c.id) && c.start >= d.start + EPS) c.start -= dur
       }
     }
@@ -357,4 +371,113 @@ export function firstFreeAudioTrack(p: Project, s: number, e: number, newId: IdG
   if (free) return free
   const last = [...p.tracks].reverse().find((t) => t.kind === 'audio')
   return addTrack(p, 'audio', last?.id ?? null, 'below', newId)
+}
+
+// ───────── Transiciones (modelo de solapamiento) ─────────
+
+export interface Junction {
+  trackId: string
+  leaveId: string
+  enterId: string
+}
+
+/** Uniones entre clips contiguos de una pista que todavía no tienen transición. */
+export function junctions(p: Project, trackId: string): Junction[] {
+  const list = trackClips(p, trackId)
+  const out: Junction[] = []
+  const fd = frameDuration(p)
+  for (let i = 0; i + 1 < list.length; i++) {
+    const a = list[i] as Clip
+    const b = list[i + 1] as Clip
+    if (Math.abs(b.start - clipEnd(a)) < fd / 2 && !p.transitions.some((t) => t.leaveClipId === a.id && t.enterClipId === b.id)) {
+      out.push({ trackId, leaveId: a.id, enterId: b.id })
+    }
+  }
+  return out
+}
+
+export interface ApplyTransition {
+  trackId: string
+  leaveId: string | null
+  enterId: string | null
+  ref: string
+  duration: number
+  params?: Record<string, unknown>
+  audio?: Transition['audio']
+}
+
+export type ApplyResult = { ok: true; id: string; duration: number; clamped: boolean } | { ok: false; error: string }
+
+/**
+ * Aplica una transición. Entre dos clips contiguos, B (y todo lo posterior de la pista) se desplaza `d` a la izquierda
+ * para crear el solape; la duración total se acorta en `d`. Con un solo extremo (fundido desde/hacia nada) no se mueve nada.
+ */
+export function applyTransition(p: Project, a: ApplyTransition, newId: IdGen): ApplyResult {
+  const A = a.leaveId ? p.clips.find((c) => c.id === a.leaveId) : undefined
+  const B = a.enterId ? p.clips.find((c) => c.id === a.enterId) : undefined
+  if (!A && !B) return { ok: false, error: 'La transición necesita al menos un clip.' }
+  if ((a.leaveId && !A) || (a.enterId && !B)) return { ok: false, error: 'No se encontró uno de los clips.' }
+  if ((A && A.trackId !== a.trackId) || (B && B.trackId !== a.trackId)) return { ok: false, error: 'Los clips deben estar en la misma pista.' }
+  const fd = frameDuration(p)
+  if (A && B) {
+    if (Math.abs(B.start - clipEnd(A)) >= fd / 2) return { ok: false, error: 'Los clips deben estar contiguos (sin hueco ni solape) para poner una transición.' }
+    if (p.transitions.some((t) => t.leaveClipId === A.id && t.enterClipId === B.id)) return { ok: false, error: 'Esa unión ya tiene una transición.' }
+  } else if (A && p.transitions.some((t) => t.leaveClipId === A.id && !t.enterClipId)) {
+    return { ok: false, error: 'Ese clip ya tiene una transición de salida.' }
+  } else if (B && p.transitions.some((t) => t.enterClipId === B.id && !t.leaveClipId)) {
+    return { ok: false, error: 'Ese clip ya tiene una transición de entrada.' }
+  }
+  const max = maxTransitionDuration(p, a.leaveId, a.enterId)
+  if (max < fd) return { ok: false, error: 'Los clips son demasiado cortos para una transición.' }
+  const d = Math.max(fd, Math.min(a.duration, max))
+  if (A && B) for (const c of p.clips) if (c.trackId === a.trackId && c.start >= B.start - EPS) c.start -= d
+  const id = newId('x_')
+  p.transitions.push({
+    id,
+    trackId: a.trackId,
+    leaveClipId: a.leaveId,
+    enterClipId: a.enterId,
+    transitionRef: a.ref,
+    duration: d,
+    params: a.params ?? {},
+    seed: 1,
+    audio: a.audio
+  })
+  return { ok: true, id, duration: d, clamped: d < a.duration - 1e-9 }
+}
+
+/** Elimina una transición; B y lo posterior vuelven `d` a la derecha (solo si unía dos clips). */
+export function removeTransition(p: Project, id: string, shift = true): void {
+  const t = p.transitions.find((x) => x.id === id)
+  if (!t) return
+  const B = t.enterClipId ? p.clips.find((c) => c.id === t.enterClipId) : undefined
+  if (shift && B && t.leaveClipId) for (const c of p.clips) if (c.trackId === t.trackId && c.start >= B.start - EPS) c.start += t.duration
+  p.transitions = p.transitions.filter((x) => x.id !== id)
+}
+
+/** Cambia la duración (limitada por los clips). Devuelve la duración aplicada. */
+export function setTransitionDuration(p: Project, id: string, duration: number): number | null {
+  const t = p.transitions.find((x) => x.id === id)
+  if (!t) return null
+  const fd = frameDuration(p)
+  const max = maxTransitionDuration(p, t.leaveClipId, t.enterClipId, id)
+  const d = Math.max(fd, Math.min(duration, max))
+  const B = t.enterClipId ? p.clips.find((c) => c.id === t.enterClipId) : undefined
+  const delta = d - t.duration
+  if (B && t.leaveClipId && Math.abs(delta) > EPS) for (const c of p.clips) if (c.trackId === t.trackId && c.start >= B.start - EPS) c.start -= delta
+  t.duration = d
+  return d
+}
+
+/** Descarta las transiciones que dejaron de ser coherentes con sus clips (tras recortar, mover, sobrescribir…). */
+export function normalizeTransitions(p: Project): void {
+  const fd = frameDuration(p)
+  p.transitions = p.transitions.filter((t) => {
+    const a = t.leaveClipId ? p.clips.find((c) => c.id === t.leaveClipId) : undefined
+    const b = t.enterClipId ? p.clips.find((c) => c.id === t.enterClipId) : undefined
+    if ((t.leaveClipId && !a) || (t.enterClipId && !b) || (!a && !b)) return false
+    if ((a && a.trackId !== t.trackId) || (b && b.trackId !== t.trackId)) return false
+    if (a && b) return Math.abs(clipEnd(a) - b.start - t.duration) < fd / 2 && t.duration <= Math.min(clipDuration(a), clipDuration(b)) + EPS
+    return t.duration <= clipDuration((a ?? b) as Clip) + EPS
+  })
 }

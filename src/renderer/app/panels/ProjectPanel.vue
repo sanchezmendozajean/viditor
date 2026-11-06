@@ -7,6 +7,8 @@ import { useTimelineStore } from '@/stores/timeline'
 import Panel from '../components/Panel.vue'
 import Icon from '../components/Icon.vue'
 
+defineProps<{ tabs?: { id: string; label: string }[]; modelValue?: string }>()
+defineEmits<{ 'update:modelValue': [id: string] }>()
 const project = useProjectStore()
 const ui = useUiStore()
 const view = ref<'grid' | 'list'>('grid')
@@ -83,7 +85,7 @@ function onDrop(e: DragEvent): void {
 </script>
 
 <template>
-  <Panel title="Proyecto" help="import">
+  <Panel title="Proyecto" help="import" :tabs="tabs" :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)">
     <div class="wrap" data-testid="project-panel" :class="{ over: dragOver }" @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop">
       <div class="bar">
         <div class="search"><Icon name="search" :size="13" /><input v-model="query" type="text" placeholder="Buscar" /></div>

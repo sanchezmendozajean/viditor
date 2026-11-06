@@ -105,11 +105,14 @@ export const clipSchema = z.object({
 export const transitionSchema = z.object({
   id: z.string(),
   trackId: z.string(),
-  leaveClipId: z.string(),
-  enterClipId: z.string(),
+  /** Clip que sale; null = la transición empieza «desde nada» (capa transparente) */
+  leaveClipId: z.string().nullable(),
+  /** Clip que entra; null = la transición termina «hacia nada» */
+  enterClipId: z.string().nullable(),
   transitionRef: z.string().regex(/^(builtin|user|project):.+/),
   duration: z.number().positive(),
   params: z.record(z.string(), z.unknown()).default({}),
+  seed: z.number().int().default(1),
   audio: z.enum(['crossfade', 'cut', 'none']).optional()
 })
 

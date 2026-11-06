@@ -6,6 +6,12 @@ export const APP_CSP =
   "img-src 'self' data: blob: viditor-media:; media-src 'self' blob: viditor-media:; font-src 'self'; " +
   "connect-src 'self'; worker-src 'self' blob:; frame-src 'none'"
 
+/**
+ * Worker de transiciones: ejecuta código del usuario con `new Function` (necesita 'unsafe-eval') pero no puede
+ * tocar la red: default-src 'none' bloquea fetch, XHR, WebSocket, imágenes, etc.
+ */
+export const TRANSITION_WORKER_CSP = "default-src 'none'; script-src 'self' 'unsafe-eval'"
+
 /** La documentación de VitePress incluye un script inline mínimo (tema oscuro/claro). */
 export const DOCS_CSP =
   "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
@@ -50,6 +56,7 @@ export function lockDownSession(ses: Session): void {
     const headers = { ...details.responseHeaders }
     let csp: string | null = null
     if (details.url.startsWith('viditor-docs:')) csp = DOCS_CSP
+    else if (/^viditor-app:\/\/app\/assets\/transition-worker[^/]*\.js/.test(details.url)) csp = TRANSITION_WORKER_CSP
     else if (!devOrigin()) csp = APP_CSP
     if (csp) {
       for (const k of Object.keys(headers)) if (k.toLowerCase() === 'content-security-policy') delete headers[k]

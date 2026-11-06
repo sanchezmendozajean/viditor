@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { net, protocol } from 'electron'
+import { app, net, protocol } from 'electron'
 import { resourcePath } from './services/paths'
 import type { ProjectService } from './services/project-service'
 
@@ -9,6 +9,7 @@ import type { ProjectService } from './services/project-service'
 export function registerSchemes(): void {
   protocol.registerSchemesAsPrivileged([
     { scheme: 'viditor-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: false } },
+    { scheme: 'viditor-app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
     { scheme: 'viditor-docs', privileges: { standard: true, secure: true, supportFetchAPI: true, bypassCSP: false } }
   ])
 }
@@ -72,6 +73,16 @@ export function registerProtocolHandlers(projects: ProjectService): void {
       return existsSync(file) ? fileResponse(file, undefined, true) : notFound()
     }
     return notFound()
+  })
+
+  // viditor-app://app/<ruta> → out/renderer/<ruta>: la interfaz se sirve con un origen propio (no file://) para poder
+  // asignar CSP por cabecera, también al worker de transiciones (necesita eval pero no red).
+  protocol.handle('viditor-app', (request) => {
+    const root = join(app.getAppPath(), 'out', 'renderer')
+    let rel = decodeURIComponent(new URL(request.url).pathname)
+    if (rel === '/' || rel === '') rel = '/index.html'
+    const file = safeJoin(root, rel)
+    return file && existsSync(file) && statSync(file).isFile() ? fileResponse(file, undefined, false) : notFound()
   })
 
   // viditor-docs://docs/<ruta> → resources/docs/<ruta> (VitePress, cleanUrls)

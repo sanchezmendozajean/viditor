@@ -1,4 +1,4 @@
-import { clipGainAt, gainToDb, trackGain } from '@shared/render-model'
+import { clipGainWithTransitions, gainToDb, trackGain } from '@shared/render-model'
 import type { Clip, Project, Track } from '@shared/project-schema'
 import type { SourceEntry } from './sources'
 
@@ -115,7 +115,12 @@ export class AudioGraph {
   }
 
   /** Actualiza todas las ganancias para el instante `t`. */
-  update(p: Project, t: number, activeClips: Map<string, { clip: Clip; track: Track }>): void {
+  update(
+    p: Project,
+    t: number,
+    activeClips: Map<string, { clip: Clip; track: Track }>,
+    modeOf: (ref: string) => 'crossfade' | 'cut' | 'none' | undefined = () => undefined
+  ): void {
     if (!this.ctx) return
     const now = this.ctx.currentTime
     this.master.gain.setTargetAtTime(p.settings.masterVolume, now, 0.01)
@@ -131,7 +136,7 @@ export class AudioGraph {
         node.gain.connect(this.trackNode(a.track.id).gain)
         node.trackId = a.track.id
       }
-      node.gain.gain.setTargetAtTime(clipGainAt(a.clip, t), now, 0.01)
+      node.gain.gain.setTargetAtTime(clipGainWithTransitions(p, a.clip, t, modeOf), now, 0.01)
     }
   }
 

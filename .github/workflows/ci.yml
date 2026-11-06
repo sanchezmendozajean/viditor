@@ -17,9 +17,10 @@ jobs:
         with: { node-version: 24, cache: npm }
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      # Las builds de docs generan la referencia (TypeDoc) que algunos tests comprueban
       - run: npm run docs:build:app
       - run: npm run docs:build:pages
+      - run: npm test
       - run: npm run build
       # Incluye el test e2e obligatorio "sin red" (specs/02 §Autocontenido).
       - name: e2e (Linux, pantalla virtual)
