@@ -15,7 +15,7 @@ let dir: string
 function ffmpeg(args: string[]): void {
   execFileSync(ffmpegPath as string, ['-v', 'error', '-y', ...args], { stdio: 'pipe' })
 }
-function probe(file: string): { streams: { codec_type: string; codec_name: string; width?: number; height?: number; r_frame_rate?: string }[]; format: { duration: string } } {
+function probe(file: string): { streams: { codec_type: string; codec_name: string; width?: number; height?: number; r_frame_rate?: string; pix_fmt?: string; color_space?: string; color_range?: string }[]; format: { duration: string } } {
   return JSON.parse(execFileSync(ffprobe.path, ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', file], { encoding: 'utf8' }))
 }
 /** Frame `n` del archivo como RGB24 crudo. */
@@ -189,6 +189,35 @@ test('la exportación coincide con la vista previa a calidad completa (ProRes, c
   console.log('Paridad vista previa ↔ exportación:', report.join(' | '))
 })
 
+test('H.264 con conversión YUV en la GPU: coincide con la vista previa y el registro lo indica', async () => {
+  await openExport()
+  await choosePreset('youtube-1080')
+  await page.getByTestId('export-quality').fill('100')
+  const out = await page.getByTestId('export-path').inputValue()
+  await page.getByTestId('export-start').click()
+  await expect(page.getByTestId('export-job-done')).toHaveCount(3, { timeout: 240_000 })
+  const v = probe(out).streams.find((s) => s.codec_type === 'video')!
+  expect(v.codec_name).toBe('h264')
+  expect(v.pix_fmt).toBe('yuv420p')
+  expect(v.color_space).toBe('bt709')
+  expect(v.color_range).toBe('tv')
+
+  const report: string[] = []
+  for (const [tc, n] of [['00:00:01:00', 30], ['00:00:02:15', 75], ['00:00:04:00', 120]] as const) {
+    await page.getByTestId('ws-edit').click()
+    await goTo(tc)
+    await page.waitForTimeout(700)
+    const d = diff(await previewRgb(), frameRgb(out, n, 1280, 720))
+    report.push(`${tc}: máx ${d.max}, media ${d.mean.toFixed(3)}`)
+    // Una conversión de color mal hecha (matriz, rango o filas volteadas) daría decenas de niveles de diferencia
+    expect(d.mean, report.join(' | ')).toBeLessThan(2.5)
+    expect(d.max, report.join(' | ')).toBeLessThanOrEqual(12)
+  }
+  console.log('Paridad H.264 (YUV en GPU):', report.join(' | '))
+  const logs = readdirSync(join(dir, '.viditor', 'logs')).filter((f) => f.startsWith('export-')).sort()
+  expect(readFileSync(join(dir, '.viditor', 'logs', logs.at(-1) as string), 'utf8')).toContain('convertido en la GPU')
+})
+
 test('Cancelar borra el archivo parcial y no deja salida', async () => {
   await openExport()
   await page.getByTestId('export-preset').selectOption('prores')
@@ -272,7 +301,7 @@ test('rendimiento: mide la exportación 1080p30 con transición (x264, sin hardw
   await page.getByTestId('export-preset').selectOption('youtube-1080')
   await page.getByTestId('export-hw').selectOption('none') // sin codificador por hardware
   await page.getByTestId('export-path').fill(join(dir, 'renders', 'rendimiento.mp4'))
-  await page.getByTestId('export-clear').click() // solo queda la exportación que se mide
+  await page.getByTestId('export-clear').click({ timeout: 2000 }).catch(() => undefined) // solo queda la exportación que se mide
   const t0 = Date.now()
   await page.getByTestId('export-start').click()
   await expect(page.getByTestId('export-job-done')).toHaveCount(1, { timeout: 240_000 })
@@ -282,9 +311,31 @@ test('rendimiento: mide la exportación 1080p30 con transición (x264, sin hardw
   const logsDir = join(dir, '.viditor', 'logs')
   for (const f of readdirSync(logsDir)) {
     const t = readFileSync(join(logsDir, f), 'utf8')
-    if (t.includes('rendimiento.mp4')) console.log(t.split('\n').filter((l) => l.startsWith('Tiempos')).join('\n'))
+    if (t.includes('rendimiento.mp4')) console.log(t.split('\n').filter((l) => l.startsWith('Tiempos') || l.startsWith('Diagnóstico')).join('\n'))
   }
   console.log(`Rendimiento 1080p30 (x264, sin hardware): ${dur.toFixed(1)} s de vídeo en ${seconds.toFixed(1)} s → ${(dur / seconds).toFixed(2)}× tiempo real`)
   expect(dur).toBeGreaterThan(14)
   expect(dur / seconds).toBeGreaterThan(0.3) // cota baja y estable en CI; el valor real se imprime arriba
+})
+
+test('contenido con textura y barras de color: el YUV nativo + GPU coincide con la decodificación de referencia de FFmpeg', async () => {
+  // Sigue el proyecto de la prueba de rendimiento: hd1 (testsrc2) de 0–8 s y hd2 (barras de color) de 7–15 s (1 s de transición).
+  // La referencia es FFmpeg decodificando el original (BT.709), sin pasar por la vista previa, cuyo vídeo en movimiento
+  // puede diferir en un frame: comprueba la matriz de color, el rango y el submuestreo de croma.
+  await openExport()
+  await page.getByTestId('export-preset').selectOption('prores')
+  await page.getByTestId('export-path').fill(join(dir, 'renders', 'textura.mov'))
+  await page.getByTestId('export-clear').click({ timeout: 2000 }).catch(() => undefined)
+  await page.getByTestId('export-start').click()
+  await expect(page.getByTestId('export-job-done')).toHaveCount(1, { timeout: 240_000 })
+  const out = join(dir, 'renders', 'textura.mov')
+  const ref = (file: string, n: number): Buffer =>
+    execFileSync(ffmpegPath as string, ['-v', 'error', '-i', file, '-vf', `select=eq(n\\,${n}),scale=1280:720:flags=bicubic:in_color_matrix=bt709`, '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { maxBuffer: 1 << 28 })
+  const report: string[] = []
+  for (const [file, srcFrame, n] of [['hd1.mp4', 60, 60], ['hd2.mp4', 150, 360]] as const) {
+    const d = diff(ref(join(work, 'src', file), srcFrame), frameRgb(out, n, 1280, 720))
+    report.push(`${file} frame ${n}: máx ${d.max}, media ${d.mean.toFixed(3)}`)
+    expect(d.mean, report.join(' | ')).toBeLessThan(2)
+  }
+  console.log('Referencia FFmpeg:', report.join(' | '))
 })

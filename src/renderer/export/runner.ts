@@ -4,6 +4,7 @@ import { formatTimecode } from '@shared/timecode'
 import type { AudioMode } from '@shared/transition-model'
 import { Compositor, type RawFrame, type Source } from '@/engine/compositor'
 import { transitionHost, type Env } from '@/engine/transition-host'
+import { YuvConverter } from './yuv'
 
 /** Capas de clip de un frame, incluidas las dos de cada transición. */
 function clipLayers(frame: Frame): DrawOp[] {
@@ -76,7 +77,10 @@ async function execute(job: ExportJobData): Promise<void> {
   compositor.resize(size.width, size.height)
   const gl = compositor.gl
   const env: Env = { width: rp.settings.width, height: rp.settings.height, fps: fpsValue }
-  const pixels = new Uint8Array(size.width * size.height * 4)
+  // Con yuv420p la conversión se hace en la GPU y por IPC viajan 1,5 bytes por píxel en lugar de 4
+  const yuv = begun.value.input === 'yuv420p' ? new YuvConverter(gl, size.width, size.height) : null
+  const pixels = new Uint8Array(yuv ? yuv.bufferLength : size.width * size.height * 4)
+  const frameBytes = yuv ? yuv.byteLength : pixels.length
   const thumbCanvas = document.createElement('canvas')
   thumbCanvas.width = 192
   thumbCanvas.height = Math.max(2, Math.round((192 * size.height) / size.width))
@@ -84,7 +88,7 @@ async function execute(job: ExportJobData): Promise<void> {
 
   const stills = new Map<string, ImageBitmap>()
   const toSource = async (mediaId: string, d: DecodedFrame): Promise<Source> => {
-    if (!d.still) return { width: d.width, height: d.height, data: d.data } satisfies RawFrame
+    if (!d.still) return { width: d.width, height: d.height, data: d.data, format: d.format } satisfies RawFrame
     let bmp = stills.get(mediaId)
     if (!bmp) {
       const px = new Uint8ClampedArray(d.data.slice().buffer as ArrayBuffer)
@@ -129,7 +133,7 @@ async function execute(job: ExportJobData): Promise<void> {
   }
 
   // Lectura de píxeles asíncrona con dos PBO: la GPU copia el frame n mientras se compone el n+1
-  const bytes = size.width * size.height * 4
+  const bytes = pixels.length
   const pbos = [gl.createBuffer(), gl.createBuffer()] as WebGLBuffer[]
   for (const b of pbos) {
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, b)
@@ -138,7 +142,8 @@ async function execute(job: ExportJobData): Promise<void> {
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null)
   const startRead = (n: number): void => {
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbos[n % 2] as WebGLBuffer)
-    gl.readPixels(0, 0, size.width, size.height, gl.RGBA, gl.UNSIGNED_BYTE, 0)
+    if (yuv) yuv.readInto()
+    else gl.readPixels(0, 0, size.width, size.height, gl.RGBA, gl.UNSIGNED_BYTE, 0)
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null)
   }
   const collect = async (n: number): Promise<void> => {
@@ -149,7 +154,7 @@ async function execute(job: ExportJobData): Promise<void> {
     timings['lectura de píxeles'] += (lap() - t0) / 1000
     t0 = lap()
     // La invocación IPC serializa los datos al momento de llamar: `pixels` se puede reutilizar enseguida.
-    inflight.push(settle(api.pushFrame(jobId, pixels)))
+    inflight.push(settle(api.pushFrame(jobId, frameBytes === pixels.length ? pixels : pixels.subarray(0, frameBytes))))
     if (inflight.length >= MAX_INFLIGHT) await inflight.shift()
     timings['envío al codificador'] += (lap() - t0) / 1000
   }
@@ -188,6 +193,7 @@ async function execute(job: ExportJobData): Promise<void> {
       (op) => transitionHost.peek(op, env)
     )
     compositor.prune(new Set(cur.sources.keys()))
+    yuv?.convert()
     timings.composición += (lap() - t0) / 1000
     startRead(n)
     if (n > 0) await collect(n - 1)

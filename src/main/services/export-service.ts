@@ -14,6 +14,8 @@ import {
   HW_SUPPORT,
   outputFps,
   outputSize,
+  stdinFormat,
+  type StdinFormat,
   type DecodedFrame,
   type DecodeRequest,
   type ExportCapabilities,
@@ -46,6 +48,8 @@ interface Job {
   encoder: ChildProcess | null
   encoderName: string
   encoderError: string
+  /** Diagnóstico: tiempo que el codificador tuvo el pipe lleno (contrapresión) y en tratar los frames, en ms */
+  stats: { drainMs: number; pushMs: number; decodeMs: number; frames: number }
   encoderExited: Promise<number | null> | null
   pool: FrameDecoderPool | null
   log: WriteStream | null
@@ -167,6 +171,7 @@ export class ExportService {
       encoder: null,
       encoderName: '',
       encoderError: '',
+      stats: { drainMs: 0, pushMs: 0, decodeMs: 0, frames: 0 },
       encoderExited: null,
       pool: null,
       log: null,
@@ -205,7 +210,7 @@ export class ExportService {
   }
 
   /** Mezcla el audio, arranca el codificador y prepara los decodificadores. */
-  async begin(sender: WebContents, jobId: string, modes: Record<string, AudioMode | undefined>): Promise<{ encoder: string }> {
+  async begin(sender: WebContents, jobId: string, modes: Record<string, AudioMode | undefined>): Promise<{ encoder: string; input: StdinFormat }> {
     const job = this.owned(sender, jobId)
     const { project, options } = job
     const { project: rp, canvas } = exportProject(project, options)
@@ -235,6 +240,9 @@ export class ExportService {
     // 2) Codificador
     const hw = await this.chooseHw(options)
     job.encoderName = encoderName(options.codec, hw)
+    const input = stdinFormat(options.codec, hw)
+    job.log.write(`Entrada del codificador: ${input === 'yuv420p' ? 'YUV 4:2:0 convertido en la GPU' : 'RGBA (conversión en FFmpeg)'}
+`)
     const args = buildEncoderArgs({
       codec: options.codec,
       hw,
@@ -245,7 +253,8 @@ export class ExportService {
       bitrateKbps: options.bitrateKbps,
       audioPath: hasAudio ? audioPath : null,
       sampleRate: MIX_SAMPLE_RATE,
-      outputPath: job.partial
+      outputPath: job.partial,
+      input
     })
     const ffmpeg = await resolveBinary('ffmpeg')
     job.log.write(`$ ${ffmpeg} ${args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}\n`)
@@ -273,14 +282,19 @@ export class ExportService {
       return { file: this.projects.resolveMediaPath(job.dir, m.path), width: w, height: h, kind: m.kind === 'image' ? 'image' : 'video' }
     })
     job.videoStartedAt = Date.now()
-    return { encoder: job.encoderName }
+    return { encoder: job.encoderName, input }
   }
 
   async decode(sender: WebContents, req: DecodeRequest): Promise<DecodedFrame> {
     const job = this.owned(sender, req.jobId)
     if (!job.pool) throw new Error('El exportador aún no está listo.')
     const clip = job.project.clips.find((c) => c.id === req.clipId)
-    return job.pool.decode(req.clipId, req.mediaId, req.sourceTime, clip?.speed || 1, req.frame)
+    const t0 = performance.now()
+    try {
+      return await job.pool.decode(req.clipId, req.mediaId, req.sourceTime, clip?.speed || 1, req.frame)
+    } finally {
+      job.stats.decodeMs += performance.now() - t0
+    }
   }
 
   /** Escribe un frame RGBA en el codificador, respetando la contrapresión. */
@@ -288,8 +302,12 @@ export class ExportService {
     const job = this.owned(sender, jobId)
     const stdin = job.encoder?.stdin
     if (!stdin || stdin.destroyed) throw new Error(`El codificador se detuvo: ${job.encoderError.trim() || 'sin detalles'}`)
+    const t0 = performance.now()
+    job.stats.frames++
     const ok = stdin.write(Buffer.from(data.buffer, data.byteOffset, data.byteLength))
+    job.stats.pushMs += performance.now() - t0
     if (!ok) {
+      const w0 = performance.now()
       await new Promise<void>((resolve, reject) => {
         const onDrain = (): void => {
           cleanup()
@@ -306,6 +324,7 @@ export class ExportService {
         stdin.once('drain', onDrain)
         stdin.once('close', onClose)
       })
+      job.stats.drainMs += performance.now() - w0
     }
   }
 
@@ -320,6 +339,8 @@ export class ExportService {
   async finish(sender: WebContents, jobId: string, timings?: Record<string, number>): Promise<void> {
     const job = this.owned(sender, jobId)
     if (timings) job.log?.write(`Tiempos (s): ${Object.entries(timings).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(', ')}
+`)
+    job.log?.write(`Diagnóstico del codificador (s): pipe lleno ${(job.stats.drainMs / 1000).toFixed(2)}, escritura ${(job.stats.pushMs / 1000).toFixed(2)}, decodificación en main ${(job.stats.decodeMs / 1000).toFixed(2)}, frames ${job.stats.frames}
 `)
     job.encoder?.stdin?.end()
     const code = await job.encoderExited

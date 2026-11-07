@@ -8,7 +8,10 @@ export interface RawFrame {
   width: number
   height: number
   data: Uint8Array
+  /** `yuv420p`: planos Y, U, V (rango limitado); la GPU los convierte a RGB. Por defecto, RGBA. */
+  format?: 'rgba' | 'yuv420p'
 }
+const isYuv = (s: Source): boolean => 'data' in s && s.format === 'yuv420p'
 export type Source = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | ImageBitmap | RawFrame
 
 const VERT = `#version 300 es
@@ -34,6 +37,30 @@ out vec4 outColor;
 void main() {
   vec4 c = texture(uTex, vUV);
   outColor = c * uOpacity; // premultiplicado
+}`
+
+/** Conversión YUV 4:2:0 (rango limitado) → RGB en la GPU; se dibuja a tamaño nativo en la textura RGBA del clip. */
+const YUV_VERT = `#version 300 es
+in vec2 aPos;
+void main() { gl_Position = vec4(aPos * 2.0 - 1.0, 0.0, 1.0); }`
+
+const YUV_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D uY;
+uniform sampler2D uU;
+uniform sampler2D uV;
+uniform vec2 uSize;     // tamaño del frame en px
+uniform vec4 uMat;      // coeficientes: r←cr, g←cb, g←cr, b←cb
+uniform float uChromaShift; // desplazamiento horizontal del croma (siting a la izquierda)
+out vec4 outColor;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uSize;   // la fila 0 de la textura es la de arriba de la imagen
+  float y = (texture(uY, uv).r - 16.0 / 255.0) * (255.0 / 219.0);
+  vec2 cuv = vec2(uv.x + uChromaShift, uv.y);
+  float cb = (texture(uU, cuv).r - 128.0 / 255.0) * (255.0 / 224.0);
+  float cr = (texture(uV, cuv).r - 128.0 / 255.0) * (255.0 / 224.0);
+  vec3 rgb = vec3(y + uMat.x * cr, y - uMat.y * cb - uMat.z * cr, y + uMat.w * cb);
+  outColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
 }`
 
 /** Capas de una transición: textura con filtros (brillo, contraste, desenfoque…), máscara alfa y color sólido. */
@@ -119,6 +146,16 @@ const mulMat = (a: Mat, b: Mat): Mat => [
   a[1] * b[4] + a[3] * b[5] + a[5]
 ]
 
+/** Planos de un frame YUV del clip y el FBO que los convierte en su textura RGBA */
+interface YuvState {
+  y: WebGLTexture
+  u: WebGLTexture
+  v: WebGLTexture
+  fbo: WebGLFramebuffer
+  w: number
+  h: number
+}
+
 interface Target {
   fbo: WebGLFramebuffer
   tex: WebGLTexture
@@ -138,6 +175,9 @@ export type TransitionProvider = (op: TransitionOp) => DisplayList | null
 export class Compositor {
   readonly gl: WebGL2RenderingContext
   private clipProg: WebGLProgram
+  private yuvProg: WebGLProgram
+  private yuvLoc: Locs = {}
+  private yuvStates = new Map<string, YuvState>()
   private layerProg: WebGLProgram
   private clipLoc: Locs = {}
   private layerLoc: Locs = {}
@@ -160,6 +200,8 @@ export class Compositor {
     this.gl = gl
     this.clipProg = this.link(VERT, FRAG)
     this.layerProg = this.link(VERT, LAYER_FRAG)
+    this.yuvProg = this.link(YUV_VERT, YUV_FRAG)
+    for (const n of ['uY', 'uU', 'uV', 'uSize', 'uMat', 'uChromaShift']) this.yuvLoc[n] = gl.getUniformLocation(this.yuvProg, n)
     for (const n of ['uRes', 'uM1', 'uM2', 'uUV', 'uTex', 'uOpacity']) this.clipLoc[n] = gl.getUniformLocation(this.clipProg, n)
     for (const n of ['uRes', 'uM1', 'uM2', 'uUV', 'uTex', 'uMask', 'uOpacity', 'uFlipY', 'uProj', 'uCanvas', 'uUseMask', 'uMaskRect', 'uMaskInvert', 'uF1', 'uF2', 'uTint', 'uSolidMode', 'uSolid']) {
       this.layerLoc[n] = gl.getUniformLocation(this.layerProg, n)
@@ -171,7 +213,7 @@ export class Compositor {
     const buf = gl.createBuffer()
     gl.bindBuffer(gl.ARRAY_BUFFER, buf)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW)
-    for (const p of [this.clipProg, this.layerProg]) {
+    for (const p of [this.clipProg, this.layerProg, this.yuvProg]) {
       const aPos = gl.getAttribLocation(p, 'aPos')
       gl.enableVertexAttribArray(aPos)
       gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0)
@@ -266,8 +308,72 @@ export class Compositor {
     return t
   }
 
+  /** Sube los planos Y, U, V de un frame y los convierte a RGB en la textura RGBA del clip (tamaño nativo). */
+  private convertYuv(clipId: string, src: RawFrame): void {
+    const gl = this.gl
+    const { width: w, height: h } = src
+    const cw = (w + 1) >> 1
+    const ch = (h + 1) >> 1
+    let st = this.yuvStates.get(clipId)
+    const rgba = this.textureFor(clipId)
+    const fresh = !st || st.w !== w || st.h !== h
+    if (fresh) {
+      if (st) {
+        for (const t of [st.y, st.u, st.v]) gl.deleteTexture(t)
+        gl.deleteFramebuffer(st.fbo)
+      }
+      const plane = (pw: number, ph: number): WebGLTexture => {
+        const t = this.newTexture()
+        gl.bindTexture(gl.TEXTURE_2D, t)
+        gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, pw, ph)
+        return t
+      }
+      gl.bindTexture(gl.TEXTURE_2D, rgba)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+      const fbo = gl.createFramebuffer() as WebGLFramebuffer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rgba, 0)
+      st = { y: plane(w, h), u: plane(cw, ch), v: plane(cw, ch), fbo, w, h }
+      this.yuvStates.set(clipId, st)
+    }
+    const s = st as YuvState
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)
+    const up = (unit: number, tex: WebGLTexture, pw: number, ph: number, offset: number): void => {
+      gl.activeTexture(gl.TEXTURE0 + unit)
+      gl.bindTexture(gl.TEXTURE_2D, tex)
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, pw, ph, gl.RED, gl.UNSIGNED_BYTE, src.data, offset)
+    }
+    up(0, s.y, w, h, 0)
+    up(1, s.u, cw, ch, w * h)
+    up(2, s.v, cw, ch, w * h + cw * ch)
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, s.fbo)
+    gl.viewport(0, 0, w, h)
+    gl.useProgram(this.yuvProg)
+    gl.uniform1i(this.yuvLoc.uY ?? null, 0)
+    gl.uniform1i(this.yuvLoc.uU ?? null, 1)
+    gl.uniform1i(this.yuvLoc.uV ?? null, 2)
+    gl.uniform2f(this.yuvLoc.uSize ?? null, w, h)
+    // HD sin etiquetar = BT.709 (lo que asume el navegador); SD, BT.601
+    if (h >= 720) gl.uniform4f(this.yuvLoc.uMat ?? null, 1.5748, 0.1873, 0.4681, 1.8556)
+    else gl.uniform4f(this.yuvLoc.uMat ?? null, 1.402, 0.344136, 0.714136, 1.772)
+    gl.uniform1f(this.yuvLoc.uChromaShift ?? null, 0.25 / cw)
+    gl.bindVertexArray(this.vao)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.activeTexture(gl.TEXTURE0)
+  }
+
   /** Libera las texturas de clips que ya no están en uso. */
   prune(keep: Set<string>): void {
+    for (const [id, st] of this.yuvStates) {
+      if (!keep.has(id)) {
+        for (const t of [st.y, st.u, st.v]) this.gl.deleteTexture(t)
+        this.gl.deleteFramebuffer(st.fbo)
+        this.yuvStates.delete(id)
+      }
+    }
     for (const [id, t] of this.textures) {
       if (!keep.has(id)) {
         this.gl.deleteTexture(t)
@@ -285,7 +391,9 @@ export class Compositor {
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, tex)
     try {
-      if ('data' in src) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, src.data)
+      if (isYuv(src)) {
+        // Ya convertido a RGB en esta textura por `convertYuv` al inicio del frame
+      } else if ('data' in src) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, src.width, src.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, src.data)
       else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src as TexImageSource)
     } catch {
       return // fuente aún sin datos o con origen cruzado: se omite
@@ -309,6 +417,13 @@ export class Compositor {
     const gl = this.gl
     this.frameW = frame.width
     this.frameH = frame.height
+    // Frames YUV (exportación): se convierten a RGB antes de componer
+    for (const op of frame.ops) {
+      for (const layer of op.kind === 'transition' ? [op.leave, op.enter] : [op]) {
+        const s = layer ? source(layer) : null
+        if (layer && s && isYuv(s)) this.convertYuv(layer.clipId, s as RawFrame)
+      }
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     const [r, g, b] = hexToRgb(frame.background)

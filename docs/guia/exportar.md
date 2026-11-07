@@ -48,4 +48,8 @@ Cada exportación guarda el comando de FFmpeg y su salida en `.viditor/logs/expo
 
 ## Rendimiento
 
-Referencia en un equipo de gama media: 1080p30 con 2 pistas, sin codificador por hardware, alrededor de tiempo real. Con NVENC/Quick Sync suele ser bastante más rápido. Las transiciones pesadas (muchas partes, `blur` grande) son lo que más cuesta; consulta [Rendimiento](/transiciones/rendimiento).
+Referencia medida en un equipo de gama media (4 núcleos, gráfica integrada): 1080p30 con una transición, sin codificador por hardware, entre **0,8× y 1,1× el tiempo real** (un vídeo de 15 s se exporta en unos 14–19 s). El resultado varía con la carga del equipo: la exportación usa todos los núcleos, así que conviene cerrar navegadores y videollamadas. Con NVENC/Quick Sync suele ser bastante más rápido.
+
+Para H.264, H.265 y VP9 (por software o NVENC) la conversión de color a YUV 4:2:0 se hace en la GPU y los frames de origen se decodifican a su tamaño nativo en YUV, sin convertirlos a RGB en la CPU: así viaja menos de la mitad de datos entre procesos. ProRes y los codificadores QSV/AMF/VAAPI conservan la ruta RGBA. El registro de cada exportación (`.viditor/logs`) incluye los tiempos por etapa y cuánto esperó el codificador, útil para ver dónde está el cuello de botella.
+
+Las transiciones pesadas (muchas partes, `blur` grande) son lo que más cuesta; consulta [Rendimiento](/transiciones/rendimiento).

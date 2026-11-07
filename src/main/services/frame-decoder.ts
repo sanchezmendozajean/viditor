@@ -14,6 +14,9 @@ export interface DecoderSource {
   kind: 'video' | 'image'
 }
 
+/** Bytes de un frame yuv420p: plano Y y dos de croma submuestreados (con redondeo hacia arriba en tamaños impares) */
+export const yuv420Bytes = (w: number, h: number): number => w * h + 2 * ((w + 1) >> 1) * ((h + 1) >> 1)
+
 const MAX_BUFFERED_FRAMES = 6
 /** Si el siguiente frame pedido está más lejos que esto, es más barato reiniciar que descartar */
 const MAX_SKIP = 90
@@ -42,14 +45,14 @@ class FrameStream {
   }
 
   private get frameBytes(): number {
-    return this.src.width * this.src.height * 4
+    return yuv420Bytes(this.src.width, this.src.height)
   }
 
   private begin(): void {
-    // Matriz BT.709 para HD (lo que asume el navegador con vídeo sin etiquetar); SD usa la que declara el archivo
-    const matrix = this.src.height >= 720 ? ':in_color_matrix=bt709' : ''
-    const vf = `fps=${(this.fps / this.speed).toFixed(6)},scale=${this.src.width}:${this.src.height}:flags=bicubic+accurate_rnd+full_chroma_int${matrix}:out_range=full`
-    const args = ['-v', 'error', '-ss', this.startTime.toFixed(6), '-i', this.src.file, '-an', '-sn', '-vf', vf, '-pix_fmt', 'rgba', '-f', 'rawvideo', 'pipe:1']
+    // Sin conversión a RGB en la CPU: se entrega YUV 4:2:0 de rango limitado a tamaño nativo y la GPU hace la matriz
+    // de color y el escalado (como la vista previa). El filtro scale solo normaliza el rango y el tamaño esperado.
+    const vf = `fps=${(this.fps / this.speed).toFixed(6)},scale=${this.src.width}:${this.src.height}:flags=bicubic:in_range=auto:out_range=tv,format=yuv420p`
+    const args = ['-v', 'error', '-ss', this.startTime.toFixed(6), '-i', this.src.file, '-an', '-sn', '-vf', vf, '-pix_fmt', 'yuv420p', '-f', 'rawvideo', 'pipe:1']
     const p = spawn(this.ffmpeg, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     this.proc = p
     p.stdout?.on('data', (c: Buffer) => {
@@ -182,7 +185,7 @@ export class FrameDecoderPool {
     s.lastUsedFrame = frameNo
     const data = await s.frame(idx)
     this.sweep(frameNo)
-    return { width: src.width, height: src.height, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), still: false }
+    return { width: src.width, height: src.height, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), format: 'yuv420p', still: false }
   }
 
   private meta = new Map<string, { start: number }>()
@@ -212,7 +215,7 @@ export class FrameDecoderPool {
       p.on('error', reject)
       p.on('close', (code) => (code === 0 ? resolve(Buffer.concat(out)) : reject(new Error(err.trim() || `ffmpeg terminó con código ${code}`))))
     })
-    const f: DecodedFrame = { width: src.width, height: src.height, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), still: true }
+    const f: DecodedFrame = { width: src.width, height: src.height, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength), format: 'rgba', still: true }
     this.stills.set(mediaId, f)
     return f
   }

@@ -66,9 +66,9 @@ const api: ViditorApi = {
   },
   exportRunner: {
     data: (jobId) => ipcRenderer.invoke(IPC.exportJobData, jobId),
-    begin: (jobId, modes) => ipcRenderer.invoke(IPC.exportBegin, jobId, modes),
     decode: (req) => ipcRenderer.invoke(IPC.exportDecode, req),
     pushFrame: (jobId, data) => ipcRenderer.invoke(IPC.exportPushFrame, jobId, data),
+    begin: (jobId, modes) => ipcRenderer.invoke(IPC.exportBegin, jobId, modes),
     progress: (jobId, frame, thumb) => ipcRenderer.send(IPC.exportReport, jobId, frame, thumb),
     finish: (jobId, timings) => ipcRenderer.invoke(IPC.exportFinish, jobId, timings),
     fail: (jobId, message) => ipcRenderer.send(IPC.exportFail, jobId, message)

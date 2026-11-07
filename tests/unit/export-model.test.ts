@@ -9,6 +9,7 @@ import {
   exportProject,
   outputSize,
   qualityToCrf,
+  stdinFormat,
   type ExportOptions
 } from '../../src/shared/export-model'
 import { exportOptionsSchema } from '../../src/shared/export-schema'
@@ -128,6 +129,24 @@ describe('modelo de exportación (specs/06)', () => {
     const vaapi = buildEncoderArgs({ ...base, hw: 'vaapi' }).join(' ')
     expect(vaapi).toContain('-vaapi_device')
     expect(vaapi).toContain('hwupload')
+  })
+
+  it('entrada yuv420p: sin filtros de conversión ni volteo', () => {
+    const base = { hw: null, width: 640, height: 360, fps: { num: 25, den: 1 }, quality: 50, bitrateKbps: null, audioPath: null, sampleRate: 48000, outputPath: 'o' } as const
+    const j = buildEncoderArgs({ ...base, codec: 'h264', input: 'yuv420p' }).join(' ')
+    expect(j).toContain('-f rawvideo -pix_fmt yuv420p -s 640x360')
+    expect(j).not.toContain('-vf')
+    expect(j).toContain('-color_range tv')
+    expect(buildEncoderArgs({ ...base, codec: 'h264' }).join(' ')).toContain('-pix_fmt rgba')
+  })
+
+  it('la conversión en la GPU solo se usa donde el codificador toma yuv420p tal cual', () => {
+    expect(stdinFormat('h264', null)).toBe('yuv420p')
+    expect(stdinFormat('h265', 'nvenc')).toBe('yuv420p')
+    expect(stdinFormat('vp9', null)).toBe('yuv420p')
+    expect(stdinFormat('prores', null)).toBe('rgba')
+    expect(stdinFormat('h264', 'qsv')).toBe('rgba')
+    expect(stdinFormat('h264', 'vaapi')).toBe('rgba')
   })
 
   it('el bitrate objetivo sustituye a la calidad constante (salvo ProRes)', () => {

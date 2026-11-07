@@ -157,9 +157,9 @@ export interface ViditorApi {
   /** Solo lo usa la ventana oculta de exportación */
   exportRunner: {
     data(jobId: string): Promise<ExportJobData>
-    begin(jobId: string, modes: Record<string, AudioMode | undefined>): Promise<IpcResult<{ encoder: string }>>
     decode(req: DecodeRequest): Promise<IpcResult<DecodedFrame>>
     pushFrame(jobId: string, data: Uint8Array): Promise<IpcResult<null>>
+    begin(jobId: string, modes: Record<string, AudioMode | undefined>): Promise<IpcResult<{ encoder: string; input: 'rgba' | 'yuv420p' }>>
     progress(jobId: string, frame: number, thumb?: string): void
     finish(jobId: string, timings?: Record<string, number>): Promise<IpcResult<null>>
     fail(jobId: string, message: string): void

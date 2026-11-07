@@ -145,6 +145,19 @@ export interface EncoderArgsInput {
   outputPath: string
   /** Dispositivo VAAPI (Linux) */
   vaapiDevice?: string
+  /** Formato de los frames que llegan por stdin; por defecto RGBA (ver `stdinFormat`) */
+  input?: StdinFormat
+}
+
+/** `yuv420p`: el renderer convierte en la GPU (BT.709, rango limitado) y entrega frames I420 ya del derecho. */
+export type StdinFormat = 'rgba' | 'yuv420p'
+
+/**
+ * Formato del vídeo por stdin. La conversión en la GPU se usa donde el codificador toma yuv420p tal cual (software y
+ * NVENC, H.264/H.265/VP9); ProRes (4:2:2 10 bits) y QSV/AMF/VAAPI siguen recibiendo RGBA y convirtiendo con FFmpeg.
+ */
+export function stdinFormat(codec: VideoCodec, hw: HwKind | null): StdinFormat {
+  return codec !== 'prores' && (hw === null || hw === 'nvenc') ? 'yuv420p' : 'rgba'
 }
 
 /**
@@ -157,7 +170,8 @@ export function buildEncoderArgs(i: EncoderArgsInput): string[] {
   const crf = qualityToCrf(i.codec, i.quality)
   const args: string[] = ['-hide_banner', '-y', '-v', 'warning']
   if (i.hw === 'vaapi') args.push('-vaapi_device', i.vaapiDevice ?? '/dev/dri/renderD128')
-  args.push('-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${i.width}x${i.height}`, '-framerate', `${i.fps.num}/${i.fps.den}`, '-i', 'pipe:0')
+  const input = i.input ?? 'rgba'
+  args.push('-f', 'rawvideo', '-pix_fmt', input, '-s', `${i.width}x${i.height}`, '-framerate', `${i.fps.num}/${i.fps.den}`, '-i', 'pipe:0')
   if (i.audioPath) args.push('-f', 'f32le', '-ar', String(i.sampleRate), '-ac', '2', '-i', i.audioPath)
   args.push('-map', '0:v')
   if (i.audioPath) args.push('-map', '1:a')
@@ -166,7 +180,8 @@ export function buildEncoderArgs(i: EncoderArgsInput): string[] {
   const pix = i.codec === 'prores' ? 'yuv422p10le' : i.hw === 'qsv' ? 'nv12' : 'yuv420p'
   const chain = ['vflip', 'scale=out_color_matrix=bt709:out_range=tv:flags=bicubic', `format=${pix}`]
   if (i.hw === 'vaapi') chain.splice(2, 1, 'format=nv12', 'hwupload')
-  args.push('-vf', chain.join(','))
+  // Con entrada ya en yuv420p BT.709 no hay nada que convertir ni voltear
+  if (input === 'rgba') args.push('-vf', chain.join(','))
   args.push('-c:v', enc)
 
   const useBitrate = i.bitrateKbps !== null && i.codec !== 'prores'
@@ -248,9 +263,13 @@ export interface DecodeRequest {
 export interface DecodedFrame {
   width: number
   height: number
-  /** RGBA con las filas de arriba abajo */
+  /**
+   * `yuv420p`: planos Y, U, V consecutivos (rango limitado, filas de arriba abajo, croma de ceil(w/2)×ceil(h/2)); lo
+   * convierte a RGB la GPU. `rgba`: las imágenes fijas, con canal alfa.
+   */
+  format: 'rgba' | 'yuv420p'
   data: Uint8Array
-  /** Las imágenes fijas llevan canal alfa */
+  /** Las imágenes fijas se decodifican una sola vez */
   still: boolean
 }
 
