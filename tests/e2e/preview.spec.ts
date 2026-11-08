@@ -87,7 +87,11 @@ test.beforeAll(async () => {
 
   // red (0–3 s) y green (3–6 s) en V1
   await page.getByTestId('media-item').nth(0).dblclick()
+  await page.getByTestId('media-preview-insert').click()
+  await page.getByText('Insertar al final del contenido').click()
   await page.getByTestId('media-item').nth(1).dblclick()
+  await page.getByTestId('media-preview-insert').click()
+  await page.getByText('Insertar al final del contenido').click()
   await expect(page.getByTestId('row-V1').getByTestId('clip')).toHaveCount(2)
 })
 
@@ -251,6 +255,8 @@ test('proxy automático para ProRes y vista previa con él', async () => {
 
   // Se coloca en V2 sobre la zona vacía (a partir de 6 s) y el monitor lo muestra en azul
   await page.getByTestId('media-item').nth(2).dblclick()
+  await page.getByTestId('media-preview-insert').click()
+  await page.getByText('Insertar al final del contenido').click()
   await goTo('00:00:07:00')
   await expect.poll(async () => { const c = await px(0.5, 0.5); return c[2]! > 150 && c[0]! < 80 }, { timeout: 15_000 }).toBe(true)
 })

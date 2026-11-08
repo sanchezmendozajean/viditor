@@ -16,7 +16,7 @@ const track = computed(() => project.project?.tracks.find((t) => t.id === tl.sel
   <Panel title="Inspector" help="transforms">
     <TransitionInspector v-if="project.project && tl.selectedTransition" />
     <ClipInspector v-else-if="project.project && tl.selection.length > 0" />
-    <div v-else-if="project.project && track" class="insp" data-testid="inspector-track">
+    <div v-else-if="project.project && track" class="info" data-testid="inspector-track">
       <h3>Pista: {{ track.name }}</h3>
       <dl>
         <dt>Tipo</dt><dd>{{ track.kind === 'video' ? 'Video' : 'Audio' }}</dd>
@@ -24,7 +24,7 @@ const track = computed(() => project.project?.tracks.find((t) => t.id === tl.sel
         <dt>Bloqueada</dt><dd>{{ track.locked ? 'Sí' : 'No' }}</dd>
       </dl>
     </div>
-    <div v-else-if="project.project" class="insp" data-testid="inspector">
+    <div v-else-if="project.project" class="info" data-testid="inspector">
       <h3>Ajustes del proyecto</h3>
       <dl>
         <dt>Nombre</dt><dd>{{ project.project.name }}</dd>
@@ -50,7 +50,7 @@ const track = computed(() => project.project?.tracks.find((t) => t.id === tl.sel
 </template>
 
 <style scoped>
-.insp { padding: 10px 12px; }
+.info { padding: 5px; }
 h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; align-items: center; }
 dt { color: var(--text-dim); }

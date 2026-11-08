@@ -67,6 +67,8 @@ test.beforeAll(async () => {
   await page.getByTestId('import-confirm').click()
   await expect(page.getByTestId('media-item')).toHaveCount(2)
   await page.getByTestId('media-item').nth(0).dblclick()
+  await page.getByTestId('media-preview-insert').click()
+  await page.getByText('Insertar al final del contenido').click()
   await expect(page.getByTestId('row-V1').getByTestId('clip')).toHaveCount(1)
 })
 

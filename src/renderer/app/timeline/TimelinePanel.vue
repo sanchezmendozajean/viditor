@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Clip, MediaItem, Track } from '@shared/project-schema'
 import { clipDuration, clipEnd, gapAt, mediaFitsTrack, quantize, snapPoints, snapTime, trackClips, trimClip, type Move } from '@shared/timeline-ops'
 import { formatTimecode } from '@shared/timecode'
@@ -11,6 +11,7 @@ import { useTransitionsStore } from '@/stores/transitions'
 import { transitionRange } from '@shared/transition-model'
 import type { Transition } from '@shared/project-schema'
 import Panel from '../components/Panel.vue'
+import { pasteWithDialog } from '../paste'
 import Icon from '../components/Icon.vue'
 import ClipView from './ClipView.vue'
 import TrackHeader from './TrackHeader.vue'
@@ -42,7 +43,14 @@ const tracks = computed(() => p.value?.tracks ?? [])
 const fps = computed(() => p.value?.settings.fps ?? { num: 30, den: 1 })
 const rowH = (t: Track): number => (collapsed.has(t.id) ? COLLAPSED_H : t.height)
 const viewW = ref(800)
-const contentW = computed(() => Math.max(viewW.value - HEADER_W, (tl.duration + 30) * zoom.value))
+// Sin margen vacío tras el último clip; durante un arrastre se amplía para poder llevar clips más allá del final.
+const contentEnd = computed(() => {
+  let end = tl.duration
+  const pv = preview.value
+  if (pv) for (const c of p.value?.clips ?? []) if (pv[c.id]) end = Math.max(end, pv[c.id]!.start + clipDuration(c) + 10)
+  return end
+})
+const contentW = computed(() => Math.max(viewW.value - HEADER_W, contentEnd.value * zoom.value))
 const rowTops = computed(() => {
   let y = RULER_H
   return tracks.value.map((t) => {
@@ -189,7 +197,9 @@ function startMove(e: PointerEvent, anchor: Clip): void {
         const from = tracks.value.findIndex((t) => t.id === orig.get(c.id)?.trackId)
         const to = tracks.value[from + s]
         const src = tracks.value[from]
-        return Boolean(to && src && to.kind === src.kind && !to.locked)
+        const media = proj.media.find((m) => m.id === c.mediaId)
+        // Misma clase de pista, o un video con audio hacia una pista de audio (y de vuelta a video)
+        return Boolean(to && src && !to.locked && (to.kind === src.kind || (media && mediaFitsTrack(media, to))))
       })
     if (shift !== 0 && !ok(shift)) shift = 0
     const out: Record<string, { start: number; trackId: string }> = {}
@@ -486,6 +496,9 @@ function clipMenu(e: MouseEvent, clip: Clip): void {
   const locked = tl.isLocked(clip.trackId)
   const canSplit = t > clip.start && t < clipEnd(clip)
   const items: MenuEntry[] = [
+    { label: 'Copiar', icon: 'copy', shortcut: 'Ctrl+C', action: () => void tl.copySelection() },
+    { label: 'Pegar…', icon: 'paste', shortcut: 'Ctrl+V', disabled: !tl.clipboard.length, action: () => void pasteWithDialog() },
+    { separator: true, label: '' },
     { label: 'Dividir', shortcut: 'Ctrl+K', disabled: locked || !canSplit, action: () => tl.splitAt(clip.id, t) },
     { label: 'Eliminar', shortcut: 'Supr', disabled: locked, action: () => tl.deleteSelection(false) },
     { label: 'Eliminar y cerrar hueco', shortcut: 'Mayús+Supr', disabled: locked, action: () => tl.deleteSelection(true) },
@@ -511,6 +524,8 @@ function laneMenu(e: MouseEvent, track: Track): void {
   const t = timeAt(e)
   const gap = gapAt(p.value as never, track.id, t)
   ui.openMenu(e, [
+    { label: 'Pegar…', icon: 'paste', shortcut: 'Ctrl+V', disabled: !tl.clipboard.length, action: () => void pasteWithDialog() },
+    { separator: true, label: '' },
     { label: 'Eliminar hueco', disabled: !gap || track.locked, action: () => tl.removeGap(track.id, t) },
     { label: 'Agregar marcador aquí', action: () => { tl.setPlayhead(t); tl.addMarker() } }
   ])
@@ -540,22 +555,54 @@ function onWheel(e: WheelEvent): void {
   e.preventDefault()
   const el = scroller.value
   if (!el) return
-  const anchorT = timeAt(e)
-  const px = e.clientX - el.getBoundingClientRect().left
+  // Con el cursor sobre la columna de cabeceras (fija) se ancla al borde izquierdo de las pistas, no a un tiempo «negativo».
+  const px = Math.max(HEADER_W, e.clientX - el.getBoundingClientRect().left)
+  const anchorT = (el.scrollLeft + px - HEADER_W) / zoom.value
   tl.setZoom(zoom.value * (e.deltaY < 0 ? 1.15 : 1 / 1.15))
-  el.scrollLeft = HEADER_W + anchorT * zoom.value - px
+  // Tras el render: el ancho del contenido ya refleja el nuevo zoom y el scroll no se recorta con el ancho anterior.
+  void nextTick(() => {
+    el.scrollLeft = Math.max(0, HEADER_W + anchorT * zoom.value - px)
+  })
 }
 
 watch(
   () => tl.playhead,
   () => {
     const el = scroller.value
-    if (!el) return
+    const reveal = tl.revealPlayhead
+    tl.revealPlayhead = false
+    if (!el || !(tl.followPlayhead || reveal)) return
     const x = playheadX.value
     const left = el.scrollLeft + HEADER_W
     const right = el.scrollLeft + el.clientWidth
+    if (reveal) {
+      if (x < left || x > right) goToPlayhead()
+      return
+    }
     if (x < left) el.scrollLeft = Math.max(0, x - HEADER_W - 40)
     else if (x > right - 20) el.scrollLeft = x - el.clientWidth + 120
+  }
+)
+
+/** Centra la línea de tiempo en el cabezal. */
+function goToPlayhead(): void {
+  const el = scroller.value
+  if (!el) return
+  el.scrollLeft = Math.max(0, playheadX.value - HEADER_W - (el.clientWidth - HEADER_W) / 2)
+}
+
+/** Si la vista queda más allá del último clip, la ajusta para que el final quede en el borde derecho (sin espacio vacío). */
+function revealEndIfOffscreen(): void {
+  const el = scroller.value
+  if (!el) return
+  const span = (el.clientWidth - HEADER_W) / zoom.value // segundos visibles
+  if (el.scrollLeft / zoom.value + span <= tl.duration + 0.01) return
+  el.scrollLeft = Math.max(0, (tl.duration - span) * zoom.value)
+}
+watch(
+  () => tl.duration,
+  (d, old) => {
+    if (d < old) void nextTick(revealEndIfOffscreen)
   }
 )
 
@@ -582,6 +629,7 @@ onMounted(() => {
   viewW.value = el.clientWidth
   tl.viewWidth = el.clientWidth
   el.scrollLeft = p.value?.view.scroll ?? 0
+  void nextTick(revealEndIfOffscreen)
 })
 onUnmounted(() => {
   if (p.value && scroller.value) p.value.view.scroll = scroller.value.scrollLeft
@@ -593,6 +641,14 @@ const tools: { id: Tool; icon: 'pointer' | 'razor' | 'hand'; label: string; key:
   { id: 'razor', icon: 'razor', label: 'Cuchilla', key: 'C' },
   { id: 'hand', icon: 'hand', label: 'Mano', key: 'H' }
 ]
+/** Botón de herramienta. La cuchilla, con clips seleccionados, los divide en el cabezal; sin selección activa el modo cuchilla. */
+function pickTool(id: Tool): void {
+  if (id === 'razor' && tl.selection.length > 0) {
+    if (tl.splitAtPlayhead() === 0) ui.showInfo('Coloca el cabezal dentro del clip seleccionado para dividirlo.')
+    return
+  }
+  tl.tool = id
+}
 const previewStart = (c: Clip): number | undefined => preview.value?.[c.id]?.start
 function clipsOf(t: Track): Clip[] {
   const list = p.value?.clips.filter((c) => (preview.value?.[c.id]?.trackId ?? c.trackId) === t.id) ?? []
@@ -604,11 +660,15 @@ function clipsOf(t: Track): Clip[] {
   <Panel title="Línea de tiempo: Secuencia 1" help="timeline">
     <template #actions>
       <div class="tools" data-testid="timeline-tools">
-        <button v-for="t in tools" :key="t.id" class="icon-btn" :class="{ on: tl.tool === t.id }" :title="`${t.label} (${t.key})`" :data-testid="`tool-${t.id}`" @click="tl.tool = t.id">
+        <button v-for="t in tools" :key="t.id" class="icon-btn" :class="{ on: tl.tool === t.id }" :title="`${t.label} (${t.key})`" :data-testid="`tool-${t.id}`" @click="pickTool(t.id)">
           <Icon :name="t.icon" :size="14" />
         </button>
         <span class="sep" />
         <button class="icon-btn" :class="{ on: tl.snap }" title="Imán (S)" data-testid="tool-snap" @click="tl.snap = !tl.snap"><Icon name="magnet" :size="14" /></button>
+        <span class="sep" />
+        <button class="icon-btn" :class="{ on: tl.followPlayhead }" title="Seguir el cabezal" data-testid="tool-follow" :aria-pressed="tl.followPlayhead" @click="tl.followPlayhead = !tl.followPlayhead"><Icon name="locateFixed" :size="14" /></button>
+        <button class="icon-btn" title="Ir al cabezal" data-testid="tool-goto-playhead" @click="goToPlayhead"><Icon name="locate" :size="14" /></button>
+        <span class="sep" />
         <button class="icon-btn" title="Agregar pista de video" data-testid="add-video-track" @click="tl.addTrack('video', tl.selectedTrackId && tracks.find((t) => t.id === tl.selectedTrackId)?.kind === 'video' ? tl.selectedTrackId : (tracks.find((t) => t.kind === 'video')?.id ?? null), 'above')">
           <Icon name="video" :size="14" /><span class="plus">+</span>
         </button>

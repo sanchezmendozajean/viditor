@@ -27,7 +27,9 @@ export const probeSchema = z.object({
   videoCodec: z.string().optional(),
   audioCodec: z.string().optional(),
   rotation: z.number().default(0),
-  pixFmt: z.string().optional()
+  pixFmt: z.string().optional(),
+  /** Mayor separación (s) entre fotogramas clave en los primeros minutos; muy alta = buscar es lento (se usa proxy) */
+  keyGap: z.number().optional()
 })
 
 export const mediaSchema = z.object({
@@ -108,6 +110,11 @@ export const clipSchema = z.object({
       fadeOut: z.number().default(0)
     })
     .default({ volume: 1, muted: false, fadeIn: 0, fadeOut: 0 }),
+  /**
+   * Desvanecimiento visual de entrada/salida (s): el alfa del clip sube de 0 a 1 al entrar y baja de 1 a 0 al salir.
+   * Es un parámetro aparte de `transform.opacity` (se multiplica con ella). 0 = sin desvanecimiento.
+   */
+  fade: z.object({ in: z.number().min(0).default(0), out: z.number().min(0).default(0) }).default({ in: 0, out: 0 }),
   /** Animación por propiedad (`x`, `y`, `scaleX`, `scaleY`, `rotation`, `opacity`, `volume`); ver `keyframes.ts` */
   keyframes: z.record(z.string(), z.array(keyframeSchema)).default({})
 })

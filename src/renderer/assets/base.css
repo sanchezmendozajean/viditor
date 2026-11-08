@@ -43,6 +43,8 @@ input[type='text'], input[type='number'], select {
   font-size: 11px;
   user-select: text;
 }
+/* El texto de un desplegable no se selecciona (solo el de los campos editables). */
+select { user-select: none; }
 input[type='color'] { background: var(--bg-input); border: 1px solid var(--border-subtle); height: 26px; width: 40px; padding: 0; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }

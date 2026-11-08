@@ -42,9 +42,13 @@ export function mediaLimit(m: MediaItem | undefined): number {
   return m.kind === 'image' ? Infinity : (m.probe?.duration ?? Infinity)
 }
 
-/** ¿Puede un medio colocarse en una pista de este tipo? Video e imágenes → video; audio → audio. */
+/**
+ * ¿Puede un medio colocarse en una pista de este tipo? Video e imágenes → video; audio → audio.
+ * Un video con audio también cabe en una pista de audio (solo suena; su imagen no se compone).
+ */
 export function mediaFitsTrack(m: MediaItem, t: Track): boolean {
-  return m.kind === 'audio' ? t.kind === 'audio' : t.kind === 'video'
+  if (m.kind === 'audio') return t.kind === 'audio'
+  return t.kind === 'video' || (m.kind === 'video' && Boolean(m.probe?.hasAudio))
 }
 
 export function makeClip(p: Project, m: MediaItem, trackId: string, start: number, id: string): Clip {
@@ -66,6 +70,7 @@ export function makeClip(p: Project, m: MediaItem, trackId: string, start: numbe
       crop: { left: 0, top: 0, right: 0, bottom: 0 }
     },
     audio: { volume: 1, muted: false, fadeIn: 0, fadeOut: 0 },
+    fade: { in: 0, out: 0 },
     keyframes: {}
   }
 }
@@ -169,6 +174,10 @@ export function splitClip(p: Project, clipId: string, t: number, newId: IdGen): 
   c.out = right.in
   right.audio.fadeIn = 0
   c.audio.fadeOut = 0
+  if (right.fade) {
+    right.fade.in = 0
+    c.fade.out = 0
+  }
   p.clips.push(right)
   // Una transición que salía de `c` ahora sale del fragmento derecho.
   for (const x of p.transitions) if (x.leaveClipId === c.id) x.leaveClipId = right.id
@@ -200,6 +209,45 @@ export function trimClip(p: Project, clipId: string, edge: 'start' | 'end', time
   const e = Math.max(c.start + minDur, Math.min(max, time))
   c.out = c.in + (e - c.start)
   return e
+}
+
+/**
+ * Cambia el tiempo de ingreso moviendo el clip entero (misma duración). No puede quedar antes del final del clip
+ * anterior de su pista ni pisar al siguiente. Devuelve el inicio aplicado, o null si el clip tiene transiciones
+ * (su posición depende de ellas).
+ */
+export function setClipStart(p: Project, clipId: string, time: number): number | null {
+  const c = p.clips.find((x) => x.id === clipId)
+  if (!c) return null
+  if (transitionsOfClip(p, c.id).length > 0) return null
+  const dur = clipDuration(c)
+  const siblings = trackClips(p, c.trackId).filter((x) => x.id !== c.id)
+  const prevEnd = siblings.filter((x) => clipEnd(x) <= c.start + EPS).reduce((a, x) => Math.max(a, clipEnd(x)), 0)
+  const nextStart = siblings.filter((x) => x.start >= clipEnd(c) - EPS).reduce((a, x) => Math.min(a, x.start), Infinity)
+  const s = Math.max(prevEnd, Math.min(nextStart - dur, quantize(p, time)))
+  c.start = Math.max(0, s)
+  return c.start
+}
+
+/** Fija el tiempo de salida recortando/alargando el final (limitado por el siguiente clip y la duración del medio). */
+export function setClipEnd(p: Project, clipId: string, time: number): number | null {
+  return trimClip(p, clipId, 'end', quantize(p, time))
+}
+
+/** Fija la duración desde el ingreso (equivale a mover la salida). */
+export function setClipDuration(p: Project, clipId: string, duration: number): number | null {
+  const c = p.clips.find((x) => x.id === clipId)
+  if (!c) return null
+  const e = trimClip(p, clipId, 'end', c.start + quantize(p, duration))
+  return e === null ? null : e - c.start
+}
+
+/** Desvanecimiento visual de entrada o salida; cada uno limitado a la duración del clip. */
+export function setClipFade(p: Project, clipId: string, which: 'in' | 'out', seconds: number): void {
+  const c = p.clips.find((x) => x.id === clipId)
+  if (!c) return
+  c.fade ??= { in: 0, out: 0 }
+  c.fade[which] = Math.min(clipDuration(c), Math.max(0, seconds))
 }
 
 /** Elimina clips; con `ripple` cierra los huecos en cada pista. */

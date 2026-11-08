@@ -89,6 +89,10 @@ export interface ViditorApi {
     minimize(): void
     toggleMaximize(): void
     close(): void
+    /** Se pidió cerrar la ventana (botón, Alt+F4, «Salir»): hay que confirmar y luego llamar a `forceClose`. */
+    onCloseRequested(cb: () => void): () => void
+    /** Cierra la ventana sin volver a preguntar. */
+    forceClose(): void
     onMaximizedChange(cb: (maximized: boolean) => void): () => void
   }
   dialogs: {
@@ -97,6 +101,8 @@ export interface ViditorApi {
     chooseMediaFiles(): Promise<string[]>
   }
   project: {
+    /** Abre la carpeta del proyecto en el explorador de archivos del sistema. */
+    openFolder(): void
     defaultParentDir(): Promise<string>
     recents(): Promise<RecentProject[]>
     removeRecent(path: string): Promise<RecentProject[]>
@@ -117,6 +123,10 @@ export interface ViditorApi {
     waveform(mediaId: string, path: string): Promise<IpcResult<Waveform>>
     /** Muestra el archivo del medio en el explorador del sistema. */
     reveal(path: string): void
+    /** Renombra el archivo en disco conservando su extensión; devuelve la nueva ruta tal como se guarda en el proyecto. */
+    renameFile(mediaId: string, path: string, newName: string): Promise<IpcResult<{ path: string }>>
+    /** Borra físicamente del disco un archivo que está dentro de la carpeta del proyecto (y su caché). Irrecuperable. */
+    deleteFile(mediaId: string, path: string): Promise<IpcResult<null>>
     /** Pide localizar el archivo de `target`; revincula también los demás faltantes que estén en esa carpeta. null = cancelado */
     relink(target: { id: string; path: string }, missing: { id: string; path: string }[]): Promise<IpcResult<RelinkedMedia[] | null>>
     onTask(cb: (task: BackgroundTask) => void): () => void
@@ -185,11 +195,16 @@ export const IPC = {
   windowToggleMaximize: 'window:toggle-maximize',
   windowClose: 'window:close',
   windowMaximizedChanged: 'window:maximized-changed',
+  /** main → renderer: el usuario pidió cerrar la ventana (el renderer decide si hay cambios sin guardar) */
+  windowCloseRequested: 'window:close-requested',
+  /** renderer → main: cerrar la ventana de verdad (ya se resolvió el guardado) */
+  windowForceClose: 'window:force-close',
   dialogDirectory: 'dialog:directory',
   dialogProjectFile: 'dialog:project-file',
   dialogMediaFiles: 'dialog:media-files',
   projectDefaultDir: 'project:default-dir',
   projectRecents: 'project:recents',
+  projectOpenFolder: 'project:open-folder',
   projectRemoveRecent: 'project:remove-recent',
   projectCreate: 'project:create',
   projectOpen: 'project:open',
@@ -203,6 +218,8 @@ export const IPC = {
   mediaProxyReady: 'media:proxy-ready',
   mediaReveal: 'media:reveal',
   mediaRelink: 'media:relink',
+  mediaDeleteFile: 'media:delete-file',
+  mediaRenameFile: 'media:rename-file',
   transitionsList: 'transitions:list',
   transitionsSave: 'transitions:save',
   transitionsCreate: 'transitions:create',

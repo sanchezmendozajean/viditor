@@ -12,6 +12,8 @@ export interface SourceEntry {
   primed: boolean
   /** Hay un arranque de reproducción en curso (seek + play) */
   starting?: boolean
+  /** Lo que tardó la última búsqueda (s): sirve para buscar por delante del reloj */
+  seekLatency?: number
 }
 
 /**

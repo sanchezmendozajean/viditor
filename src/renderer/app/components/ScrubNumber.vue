@@ -43,11 +43,39 @@ function down(e: PointerEvent): void {
     if (dragging) return emit('end')
     editing.value = true
     text.value = String(round(props.modelValue))
-    await nextTick()
-    input.value?.select()
+    startEdit()
   }
   el.addEventListener('pointermove', move)
   el.addEventListener('pointerup', up)
+}
+
+async function startEdit(): Promise<void> {
+  if (props.disabled) return
+  editing.value = true
+  text.value = String(round(props.modelValue))
+  await nextTick()
+  input.value?.select()
+}
+
+/** Confirma y salta al siguiente (o anterior) número editable en orden de documento. */
+async function commitAndMove(dir: 1 | -1): Promise<void> {
+  const current = input.value
+  const all = (): HTMLElement[] =>
+    Array.from(document.querySelectorAll<HTMLElement>('.scrub:not(.disabled) > .val, .scrub:not(.disabled) > .edit')).filter(
+      (n) => n.offsetParent !== null
+    )
+  const list = all()
+  const idx = current ? list.indexOf(current) : -1
+  commit()
+  await nextTick()
+  const after = all()
+  // Tras confirmar, el input se convierte en .val: se localiza por posición.
+  const target = after[idx + dir]
+  if (idx >= 0 && target) target.dispatchEvent(new CustomEvent('scrub-edit'))
+}
+
+function cancel(): void {
+  editing.value = false
 }
 
 function commit(): void {
@@ -71,10 +99,19 @@ function commit(): void {
       class="edit"
       type="text"
       @blur="commit"
-      @keydown.enter="($event.target as HTMLInputElement).blur()"
-      @keydown.esc="editing = false"
+      @keydown.enter.prevent="commitAndMove(1)"
+      @keydown.tab.exact.prevent="commitAndMove(1)"
+      @keydown.tab.shift.prevent="commitAndMove(-1)"
+      @keydown.esc.stop.prevent="cancel"
     />
-    <span v-else class="val mono" :title="'Arrastra para cambiar; clic para escribir'" @pointerdown="down">{{ shown }}</span>
+    <span
+      v-else
+      class="val mono"
+      :title="'Arrastra para cambiar; clic para escribir'"
+      @pointerdown="down"
+      @scrub-edit="startEdit"
+      >{{ shown }}</span
+    >
   </span>
 </template>
 

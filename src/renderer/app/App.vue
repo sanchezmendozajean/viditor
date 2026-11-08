@@ -10,6 +10,10 @@ import StartScreen from './StartScreen.vue'
 import EditorLayout from './EditorLayout.vue'
 import NewProjectDialog from './dialogs/NewProjectDialog.vue'
 import ImportDialog from './dialogs/ImportDialog.vue'
+import DeleteMediaDialog from './dialogs/DeleteMediaDialog.vue'
+import PasteDialog from './dialogs/PasteDialog.vue'
+import MediaPreviewDialog from './dialogs/MediaPreviewDialog.vue'
+import CloseConfirmDialog from './dialogs/CloseConfirmDialog.vue'
 import ContextMenu from './components/ContextMenu.vue'
 import { handleKey } from './commands'
 import CommandPalette from './dialogs/CommandPalette.vue'
@@ -21,6 +25,7 @@ const ui = useUiStore()
 let offTask: (() => void) | undefined
 let offProxy: (() => void) | undefined
 let offOpenFile: (() => void) | undefined
+let offClose: (() => void) | undefined
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 
 function onKey(e: KeyboardEvent): void {
@@ -39,10 +44,14 @@ onMounted(() => {
   offTask = window.viditor.media.onTask((t) => ui.onTask(t))
   // Un proxy H.264 terminó: el medio pasa a reproducirse desde él (el original no se toca).
   offProxy = window.viditor.media.onProxyReady(({ mediaId, path }) => {
-    project.mutate((p) => {
-      const m = p.media.find((x) => x.id === mediaId)
-      if (m) m.proxy = path
-    })
+    // Metadato de caché: no cuenta como modificación del proyecto (se guarda con el siguiente guardado)
+    const m = project.project?.media.find((x) => x.id === mediaId)
+    if (m) m.proxy = path
+  })
+  // Cerrar la ventana: si hay cambios sin guardar se pregunta antes
+  offClose = window.viditor.window.onCloseRequested(() => {
+    if (project.isOpen && project.dirty) ui.closeAsk = true
+    else window.viditor.window.forceClose()
   })
   window.addEventListener('keydown', onKey)
   window.addEventListener('dragover', stopDrop)
@@ -52,6 +61,7 @@ onUnmounted(() => {
   offTask?.()
   offProxy?.()
   offOpenFile?.()
+  offClose?.()
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('dragover', stopDrop)
   window.removeEventListener('drop', stopDrop)
@@ -73,6 +83,10 @@ watch(
     <StatusBar />
     <NewProjectDialog v-if="ui.newProjectOpen" />
     <ImportDialog v-if="ui.importAsk" />
+    <DeleteMediaDialog v-if="ui.deleteAsk" />
+    <PasteDialog v-if="ui.pasteAsk" />
+    <MediaPreviewDialog v-if="ui.previewMediaId" />
+    <CloseConfirmDialog v-if="ui.closeAsk" />
     <CommandPalette v-if="ui.paletteOpen" />
     <PreferencesDialog v-if="ui.prefsOpen" />
     <ContextMenu />

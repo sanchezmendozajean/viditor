@@ -14,6 +14,8 @@ const api: ViditorApi = {
     minimize: () => ipcRenderer.send(IPC.windowMinimize),
     toggleMaximize: () => ipcRenderer.send(IPC.windowToggleMaximize),
     close: () => ipcRenderer.send(IPC.windowClose),
+    onCloseRequested: (cb) => subscribe<undefined>(IPC.windowCloseRequested, () => cb()),
+    forceClose: () => ipcRenderer.send(IPC.windowForceClose),
     onMaximizedChange: (cb) => subscribe<boolean>(IPC.windowMaximizedChanged, cb)
   },
   dialogs: {
@@ -22,6 +24,7 @@ const api: ViditorApi = {
     chooseMediaFiles: () => ipcRenderer.invoke(IPC.dialogMediaFiles)
   },
   project: {
+    openFolder: () => ipcRenderer.send(IPC.projectOpenFolder),
     defaultParentDir: () => ipcRenderer.invoke(IPC.projectDefaultDir),
     recents: () => ipcRenderer.invoke(IPC.projectRecents),
     removeRecent: (path) => ipcRenderer.invoke(IPC.projectRemoveRecent, path),
@@ -38,6 +41,8 @@ const api: ViditorApi = {
     pathForFile: (file) => webUtils.getPathForFile(file),
     waveform: (mediaId, path) => ipcRenderer.invoke(IPC.mediaWaveform, mediaId, path),
     reveal: (path) => ipcRenderer.send(IPC.mediaReveal, path),
+    renameFile: (mediaId, path, newName) => ipcRenderer.invoke(IPC.mediaRenameFile, mediaId, path, newName),
+    deleteFile: (mediaId, path) => ipcRenderer.invoke(IPC.mediaDeleteFile, mediaId, path),
     relink: (target, missing) => ipcRenderer.invoke(IPC.mediaRelink, target, missing),
     onTask: (cb) => subscribe<BackgroundTask>(IPC.mediaTask, cb),
     onProxyReady: (cb) => subscribe<{ mediaId: string; path: string }>(IPC.mediaProxyReady, cb),

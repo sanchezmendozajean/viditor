@@ -2,6 +2,7 @@ import { existsSync, statSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, net, protocol } from 'electron'
+import { parseRange } from '@shared/http-range'
 import { resourcePath } from './services/paths'
 import type { ProjectService } from './services/project-service'
 
@@ -37,8 +38,26 @@ function fileResponse(file: string, request?: Request, cors = false): Promise<Re
     if (type) headers.set('content-type', type)
     // CORS: sin él, WebGL no puede subir el vídeo como textura (origen cruzado).
     if (cors) headers.set('access-control-allow-origin', '*')
+    // net.fetch(file://) devuelve el trozo pedido pero como 200 y sin Content-Range: Chromium no lo toma como un rango
+    // (el video no se deja buscar y siempre muestra el primer fotograma). Se responde 206 con Content-Range.
+    const range = parseRange(request?.headers.get('range') ?? null, sizeOf(file))
+    if (range) {
+      headers.set('content-range', `bytes ${range.start}-${range.end}/${range.size}`)
+      headers.set('content-length', String(range.end - range.start + 1))
+      headers.set('accept-ranges', 'bytes')
+      return new Response(res.body, { status: 206, statusText: 'Partial Content', headers })
+    }
+    headers.set('accept-ranges', 'bytes')
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
   })
+}
+
+function sizeOf(file: string): number {
+  try {
+    return statSync(file).size
+  } catch {
+    return 0
+  }
 }
 
 function notFound(): Response {
@@ -69,7 +88,8 @@ export function registerProtocolHandlers(projects: ProjectService): void {
     if (url.hostname === 'thumb') {
       const id = decodeURIComponent(url.pathname.replace(/^\//, '')).replace(/\.jpg$/, '')
       if (!/^m_[0-9A-Za-z]+$/.test(id)) return notFound()
-      const file = join(dir, '.viditor', 'cache', 'thumbs', `${id}.jpg`)
+      const png = join(dir, '.viditor', 'cache', 'thumbs', `${id}.png`) // imágenes (con transparencia)
+      const file = existsSync(png) ? png : join(dir, '.viditor', 'cache', 'thumbs', `${id}.jpg`)
       return existsSync(file) ? fileResponse(file, undefined, true) : notFound()
     }
     return notFound()

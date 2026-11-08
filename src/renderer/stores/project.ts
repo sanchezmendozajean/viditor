@@ -128,6 +128,58 @@ export const useProjectStore = defineStore('project', {
       ui.showInfo(found.length === 1 ? 'Medio revinculado.' : `${found.length} medios revinculados.`)
     },
 
+    /**
+     * Renombra el archivo del recurso en disco (conservando la extensión) y actualiza su ruta en el proyecto.
+     * Si el proyecto estaba guardado, se vuelve a guardar al instante y no aparece como modificado.
+     */
+    async renameMedia(mediaId: string, newName: string): Promise<void> {
+      const ui = useUiStore()
+      const m = this.project?.media.find((x) => x.id === mediaId)
+      if (!m) return
+      const oldFile = m.path.split('/').pop() ?? m.path
+      const oldStem = oldFile.includes('.') ? oldFile.slice(0, oldFile.lastIndexOf('.')) : oldFile
+      if (!newName.trim() || newName.trim() === oldStem || newName.trim() === oldFile) return
+      const r = await window.viditor.media.renameFile(m.id, m.path, newName)
+      if (!r.ok) return ui.showError(`No se pudo renombrar: ${r.error}`)
+      const wasDirty = this.dirty
+      const newFile = r.value.path.split('/').pop() ?? r.value.path
+      this.mutate((p) => {
+        const target = p.media.find((x) => x.id === mediaId)
+        if (!target) return
+        target.path = r.value.path
+        // Los clips que aún llevan el nombre anterior siguen al recurso
+        for (const c of p.clips) if (c.mediaId === mediaId && c.name === oldFile) c.name = newFile
+      })
+      if (!wasDirty) {
+        this.dirty = false // el cambio no cuenta como modificación: se guarda enseguida
+        if (!(await this.save())) this.dirty = true
+      }
+    },
+
+    /**
+     * Quita un recurso del proyecto junto con sus clips. Con `deleteFile` borra además el archivo del disco
+     * (solo recursos dentro de la carpeta del proyecto). No es deshacible, así que se limpia el historial.
+     */
+    async removeMedia(mediaId: string, deleteFile: boolean): Promise<void> {
+      const ui = useUiStore()
+      const media = this.project?.media.find((m) => m.id === mediaId)
+      if (!this.project || !media) return
+      if (deleteFile) {
+        const r = await window.viditor.media.deleteFile(media.id, media.path)
+        if (!r.ok) return ui.showError(`No se pudo eliminar el archivo: ${r.error}`)
+      }
+      this.mutate((p) => {
+        const gone = new Set(p.clips.filter((c) => c.mediaId === mediaId).map((c) => c.id))
+        p.clips = p.clips.filter((c) => !gone.has(c.id))
+        p.transitions = p.transitions.filter((t) => !(t.leaveClipId && gone.has(t.leaveClipId)) && !(t.enterClipId && gone.has(t.enterClipId)))
+        p.media = p.media.filter((m) => m.id !== mediaId)
+      })
+      this.missing = this.missing.filter((id) => id !== mediaId)
+      useTimelineStore().reset()
+      await this.save()
+      ui.showInfo(deleteFile ? 'Recurso eliminado del disco.' : 'Referencia quitada.')
+    },
+
     async importWithDialog(): Promise<void> {
       const files = await window.viditor.dialogs.chooseMediaFiles()
       if (files.length) await this.importPaths(files)

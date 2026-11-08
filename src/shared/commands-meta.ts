@@ -23,6 +23,7 @@ export const COMMANDS: readonly CommandMeta[] = [
   { id: 'file.open', label: 'Abrir proyecto…', category: 'Archivo', keys: ['Ctrl+O'], global: true, anywhere: true },
   { id: 'file.save', label: 'Guardar', category: 'Archivo', keys: ['Ctrl+S'], global: true },
   { id: 'file.import', label: 'Importar medios…', category: 'Archivo', keys: ['Ctrl+I'], global: true },
+  { id: 'file.openFolder', label: 'Ir a los archivos del proyecto', category: 'Archivo' },
   { id: 'file.close', label: 'Cerrar proyecto', category: 'Archivo' },
   { id: 'export.frame', label: 'Exportar fotograma actual (PNG)…', category: 'Archivo', keys: ['Ctrl+Shift+E'] },
   { id: 'view.export', label: 'Ir a Exportar', category: 'Archivo', keys: ['Ctrl+M'], global: true },
@@ -30,6 +31,8 @@ export const COMMANDS: readonly CommandMeta[] = [
   // Edición
   { id: 'edit.undo', label: 'Deshacer', category: 'Edición', keys: ['Ctrl+Z'] },
   { id: 'edit.redo', label: 'Rehacer', category: 'Edición', keys: ['Ctrl+Shift+Z', 'Ctrl+Y'] },
+  { id: 'edit.copy', label: 'Copiar clips', category: 'Edición', keys: ['Ctrl+C'] },
+  { id: 'edit.paste', label: 'Pegar clips…', category: 'Edición', keys: ['Ctrl+V'] },
   { id: 'edit.selectAll', label: 'Seleccionar todo', category: 'Edición', keys: ['Ctrl+A'] },
   { id: 'edit.selectNone', label: 'Quitar la selección', category: 'Edición', keys: ['Escape'] },
   { id: 'edit.delete', label: 'Eliminar', category: 'Edición', keys: ['Delete', 'Backspace'] },

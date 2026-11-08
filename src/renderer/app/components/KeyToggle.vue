@@ -29,7 +29,7 @@ const title = computed(() =>
 
 <template>
   <span class="keytoggle" data-testid="keytoggle">
-    <button v-if="animated" class="nav" title="Fotograma anterior" data-testid="key-prev" @click.stop="tl.seekKey(-1, keys)">‹</button>
+    <button class="nav" :disabled="!animated" title="Fotograma anterior" data-testid="key-prev" @click.stop="tl.seekKey(-1, keys)">‹</button>
     <button
       class="dia"
       :class="{ on, animated }"
@@ -40,16 +40,17 @@ const title = computed(() =>
       @click.stop="tl.toggleKey(keys)"
       @contextmenu.prevent.stop="tl.clearAnimation(keys)"
     />
-    <button v-if="animated" class="nav" title="Fotograma siguiente" data-testid="key-next" @click.stop="tl.seekKey(1, keys)">›</button>
+    <button class="nav" :disabled="!animated" title="Fotograma siguiente" data-testid="key-next" @click.stop="tl.seekKey(1, keys)">›</button>
   </span>
 </template>
 
 <style scoped>
-.keytoggle { display: inline-flex; align-items: center; gap: 1px; vertical-align: middle; margin-left: 3px; }
+.keytoggle { display: inline-flex; align-items: center; gap: 1px; vertical-align: middle; margin-right: 4px; }
 .dia { width: 9px; height: 9px; padding: 0; transform: rotate(45deg); border: 1px solid var(--text-dim); background: transparent; cursor: pointer; border-radius: 1px; }
 .dia.animated { border-color: var(--accent); }
 .dia.on { background: var(--accent); border-color: var(--accent); }
 .dia:disabled { opacity: 0.35; cursor: default; }
 .nav { border: 0; background: none; color: var(--text-dim); cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1; }
-.nav:hover { color: var(--text); }
+.nav:disabled { opacity: 0.35; cursor: default; }
+.nav:hover:not(:disabled) { color: var(--text); }
 </style>

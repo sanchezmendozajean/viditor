@@ -40,7 +40,7 @@ onUnmounted(() => engine.reset())
 
 const leftTab = ref<string>('project')
 const leftTabs = [
-  { id: 'project', label: 'Proyecto' },
+  { id: 'project', label: 'Recursos' },
   { id: 'transitions', label: 'Transiciones' }
 ]
 const size = reactive({ left: 300, right: 300, bottom: 260, meters: 120, tLeft: 220, tRight: 340, console: 160 })

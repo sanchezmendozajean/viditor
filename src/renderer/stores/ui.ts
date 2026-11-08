@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import type { BackgroundTask } from '@shared/ipc'
 import type { ImportMode } from '@shared/project-schema'
+import type { IconName } from '@/app/components/Icon.vue'
 
 export type WorkspaceId = 'edit' | 'transitions' | 'audio' | 'export'
 
@@ -13,6 +14,8 @@ export const WORKSPACES: { id: WorkspaceId; label: string }[] = [
 
 export interface MenuEntry {
   label: string
+  /** Icono a la izquierda de la opción (siempre que exista uno adecuado). */
+  icon?: IconName
   shortcut?: string
   disabled?: boolean
   separator?: boolean
@@ -31,6 +34,13 @@ export const useUiStore = defineStore('ui', {
     paletteOpen: false,
     prefsOpen: false,
     importAsk: null as { count: number; resolve: (c: ImportChoice | null) => void } | null,
+    /** Pregunta al cerrar la ventana con cambios sin guardar */
+    closeAsk: false,
+    /** Medio que se previsualiza en el modal (doble clic en el panel Recursos) */
+    previewMediaId: null as string | null,
+    /** Pregunta dónde pegar los clips copiados */
+    pasteAsk: null as { resolve: (where: 'playhead' | 'selection' | 'end' | null) => void } | null,
+    deleteAsk: null as { name: string; resolve: (ok: boolean) => void } | null,
     tasks: [] as BackgroundTask[],
     /** Se incrementa cuando termina una miniatura para refrescar las <img>. */
     thumbVersion: {} as Record<string, number>,
@@ -60,6 +70,27 @@ export const useUiStore = defineStore('ui', {
           resolve: (c) => {
             this.importAsk = null
             resolve(c)
+          }
+        }
+      })
+    },
+    askPaste(): Promise<'playhead' | 'selection' | 'end' | null> {
+      return new Promise((resolve) => {
+        this.pasteAsk = {
+          resolve: (w) => {
+            this.pasteAsk = null
+            resolve(w)
+          }
+        }
+      })
+    },
+    askDeleteMedia(name: string): Promise<boolean> {
+      return new Promise((resolve) => {
+        this.deleteAsk = {
+          name,
+          resolve: (ok) => {
+            this.deleteAsk = null
+            resolve(ok)
           }
         }
       })

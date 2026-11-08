@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useUiStore, type MenuEntry } from '@/stores/ui'
+import Icon from './Icon.vue'
 
 const ui = useUiStore()
 const menu = computed(() => ui.contextMenu)
@@ -39,7 +40,7 @@ onUnmounted(() => {
     <template v-for="(it, i) in menu.items" :key="i">
       <hr v-if="it.separator" />
       <button v-else class="item" :disabled="it.disabled" @click="run(it)">
-        <span>{{ it.label }}</span><span class="dim">{{ it.shortcut }}</span>
+        <span class="lbl"><span class="ico"><Icon v-if="it.icon" :name="it.icon" :size="13" /></span>{{ it.label }}</span><span class="dim">{{ it.shortcut }}</span>
       </button>
     </template>
   </div>
@@ -51,5 +52,7 @@ onUnmounted(() => {
 .item:hover:not(:disabled) { background: var(--accent); color: #fff; }
 .item:hover:not(:disabled) .dim { color: #fff; }
 .item:disabled { color: var(--text-dim); cursor: default; }
+.lbl { display: flex; align-items: center; gap: 8px; }
+.ico { width: 14px; display: inline-flex; justify-content: center; }
 hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 3px 0; }
 </style>

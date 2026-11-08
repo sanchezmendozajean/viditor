@@ -180,8 +180,21 @@ function drawOpFor(p: Project, source: Clip, media: MediaItem, t: number): DrawO
     sourceTime: clip.in + (t - clip.start) * clip.speed,
     matrix: clipMatrix(p.settings, clip, g),
     uv: [clip.transform.flipH ? u1 : u0, clip.transform.flipV ? v1 : v0, clip.transform.flipH ? u0 : u1, clip.transform.flipV ? v0 : v1],
-    opacity: clip.transform.opacity
+    opacity: clip.transform.opacity * clipFadeAt(clip, t)
   }
+}
+
+/** Factor de alfa del desvanecimiento visual del clip en `t` (1 sin desvanecimiento). Independiente de la opacidad. */
+export function clipFadeAt(clip: Clip, t: number): number {
+  const fin = clip.fade?.in ?? 0
+  const fout = clip.fade?.out ?? 0
+  if (fin <= 0 && fout <= 0) return 1
+  const local = t - clip.start
+  const toEnd = clipEnd(clip) - t
+  let f = 1
+  if (fin > 0 && local < fin) f *= Math.min(1, Math.max(0, local / fin))
+  if (fout > 0 && toEnd < fout) f *= Math.min(1, Math.max(0, toEnd / fout))
+  return f
 }
 
 /** Frame de vídeo en el tiempo `t`: capas de abajo (fondo) hacia arriba (frente). */

@@ -23,6 +23,8 @@ function clipLayers(frame: Frame): DrawOp[] {
 }
 
 const PREWARM_S = 1.5
+/** Espera máxima de una búsqueda al pausar/arrastrar: con fotogramas clave muy separados puede tardar más de un segundo. */
+const PAUSED_SEEK_MS = 8000
 
 /**
  * Motor de vista previa: reloj de reproducción (FrameScheduler), fuentes, compositor y audio.
@@ -47,6 +49,16 @@ export class Engine {
       this.audio.attach(e)
       const redraw = (): void => this.requestRender()
       e.el.addEventListener(e.el instanceof HTMLImageElement ? 'load' : 'loadeddata', redraw)
+      // Una búsqueda lenta (GOP largo) puede terminar después de dibujar: al acabar se redibuja el cuadro pausado.
+      if (e.el instanceof HTMLVideoElement) {
+        let last = 0
+        e.el.addEventListener('seeked', () => {
+          const now = performance.now()
+          if (now - last < 120) return // evita bucles: cada redibujado puede pedir una búsqueda
+          last = now
+          redraw()
+        })
+      }
     }
     this.sources.onDispose = (e) => this.audio.detach(e)
   }
@@ -129,6 +141,15 @@ export class Engine {
     comp.prune(new Set(clipLayers(frame).map((o) => o.clipId)))
   }
 
+  /** ¿Todos los videos/imágenes visibles tienen ya un fotograma dibujable? (un elemento con error cuenta como listo) */
+  private layersReady(frame: Frame): boolean {
+    for (const op of clipLayers(frame)) {
+      const e = this.sources.all.find((x) => x.clipId === op.clipId)
+      if (e && !isReady(e.el) && !(e.el instanceof HTMLVideoElement && e.el.error)) return false
+    }
+    return true
+  }
+
   /** Frame exacto en `t` (pausa, scrubbing, marcha atrás). La última petición gana. */
   private async renderAt(t: number): Promise<void> {
     const p = this.project
@@ -141,7 +162,7 @@ export class Engine {
     for (const op of clipLayers(frame)) {
       const clip = clipById.get(op.clipId)
       const e = clip ? this.entryFor(clip) : null
-      if (e && e.el instanceof HTMLVideoElement) waits.push(seekTo(e.el, op.sourceTime))
+      if (e && e.el instanceof HTMLVideoElement) waits.push(seekTo(e.el, op.sourceTime, PAUSED_SEEK_MS))
     }
     await Promise.all(waits)
     // Las display lists de las transiciones las calcula el worker (con caché): se esperan antes de dibujar
@@ -262,31 +283,46 @@ export class Engine {
     this.audio.update(p, t, pb.rate > 0 ? activeMap : new Map(), useTransitionsStore().modeOf)
     if (pb.rate > 0) {
       this.prefetchTransitions(p, t, frame)
-      this.draw(frame)
+      // Si algún video activo aún está buscando (no tiene fotograma), se conserva el último cuadro en vez de dibujar en blanco.
+      if (this.layersReady(frame)) this.draw(frame)
     }
     this.raf = requestAnimationFrame(this.tick)
   }
 
-  /** Mantiene un clip activo reproduciéndose y alineado con el reloj. */
+  /**
+   * Mantiene un clip activo reproduciéndose y alineado con el reloj. Buscar puede tardar (GOP largo): se aprende cuánto
+   * y se busca ese tiempo por delante, y nunca se reinicia una búsqueda en curso (si no, no terminaría jamás).
+   */
   private syncPlaying(clip: Clip, t: number, rate: number): void {
     const e = this.entryFor(clip)
     if (!e || !(e.el instanceof HTMLVideoElement)) return
     const el = e.el
     const desired = clip.in + (t - clip.start) * clip.speed
+    const seekAhead = (): void => {
+      const started = performance.now()
+      el.addEventListener(
+        'seeked',
+        () => {
+          e.seekLatency = Math.min(4, (performance.now() - started) / 1000)
+        },
+        { once: true }
+      )
+      el.currentTime = Math.max(0, desired + (e.seekLatency ?? 0.2) * rate * clip.speed)
+    }
     if (el.paused) {
       if (e.starting) return
       e.starting = true
-      void seekTo(el, desired, 300)
-        .then(() => {
-          el.playbackRate = rate
-          return el.play()
-        })
+      el.playbackRate = rate
+      seekAhead()
+      el.play()
         .catch(() => undefined)
         .finally(() => (e.starting = false))
       return
     }
     if (el.playbackRate !== rate) el.playbackRate = rate
-    if (Math.abs(el.currentTime - desired) > 0.25) el.currentTime = desired
+    if (el.seeking) return
+    // Con búsquedas lentas se tolera más desfase: reiniciar la búsqueda a cada instante dejaría el video siempre en blanco.
+    if (Math.abs(el.currentTime - desired) > Math.max(0.25, (e.seekLatency ?? 0) * 1.5)) seekAhead()
   }
 
   /** Deja listos los clips que empiezan pronto para que el corte sea limpio. */

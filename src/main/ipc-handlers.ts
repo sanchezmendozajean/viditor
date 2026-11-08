@@ -1,7 +1,7 @@
-import { basename, dirname, join } from 'node:path'
-import { sanitizeFileName } from './services/paths'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { sanitizeFileName, toPosix } from './services/paths'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { ZodError } from 'zod'
 import { IPC, type BackgroundTask, type ImportRequest, type IpcResult, type NewProjectRequest, type Waveform } from '@shared/ipc'
@@ -16,7 +16,7 @@ import { planRelink } from './services/relink'
 import type { PrefsService } from './services/prefs-service'
 import { computeWaveform, JobQueue, makeThumbnail } from './services/media-service'
 import { openExternalFromUserClick } from './security'
-import { openHelpWindow } from './windows'
+import { allowClose, openHelpWindow } from './windows'
 import type { ExportService } from './services/export-service'
 import { exportOptionsSchema } from '@shared/export-schema'
 
@@ -51,6 +51,12 @@ export function registerIpc(projects: ProjectService, registry: TransitionRegist
     if (w) w.isMaximized() ? w.unmaximize() : w.maximize()
   })
   ipcMain.on(IPC.windowClose, (e) => windowOf(e)?.close())
+  ipcMain.on(IPC.windowForceClose, (e) => {
+    const w = windowOf(e)
+    if (!w) return
+    allowClose(w)
+    w.close()
+  })
 
   ipcMain.handle(IPC.dialogDirectory, async (e, defaultPath?: string) => {
     const w = windowOf(e)
@@ -155,7 +161,7 @@ export function registerIpc(projects: ProjectService, registry: TransitionRegist
       }
       const result = await imports.import(dir, clean, (item, abs) => {
         q.add(`thumb:${item.id}`, `Miniatura de ${item.path.split('/').pop()}`, async () => {
-          const out = join(dir, '.viditor', 'cache', 'thumbs', `${item.id}.jpg`)
+          const out = join(dir, '.viditor', 'cache', 'thumbs', `${item.id}${item.kind === 'image' ? '.png' : '.jpg'}`) // PNG para conservar la transparencia
           await makeThumbnail(abs, item.kind, item.probe?.duration ?? 0, out)
         })
       })
@@ -180,6 +186,54 @@ export function registerIpc(projects: ProjectService, registry: TransitionRegist
       return wave
     })
   )
+
+  ipcMain.handle(IPC.mediaRenameFile, (_e, mediaId: string, path: string, newName: string) =>
+    guard(async () => {
+      const dir = projects.dir
+      if (!dir) throw new Error('No hay un proyecto abierto.')
+      if (!/^m_[0-9A-Za-z]+$/.test(String(mediaId))) throw new Error('Identificador de medio inválido.')
+      const abs = projects.resolveMediaPath(dir, String(path))
+      if (!existsSync(abs)) throw new Error('No se encontró el archivo del recurso.')
+      // El usuario escribe el nombre sin extensión; la extensión original se conserva siempre.
+      const ext = extname(abs)
+      let stem = String(newName).trim()
+      if (ext && stem.toLowerCase().endsWith(ext.toLowerCase())) stem = stem.slice(0, -ext.length)
+      stem = stem.replace(/[. ]+$/g, '')
+      if (!stem) throw new Error('Nombre no válido.')
+      stem = sanitizeFileName(stem)
+      const target = join(dirname(abs), stem + ext)
+      if (target !== abs) {
+        const sameFileCaseOnly = process.platform === 'win32' && target.toLowerCase() === abs.toLowerCase()
+        if (existsSync(target) && !sameFileCaseOnly) throw new Error('Ya existe un archivo con ese nombre en la carpeta.')
+        await rename(abs, target)
+      }
+      // Misma convención que al importar: relativa al proyecto si la ruta guardada lo era, absoluta (con /) si no.
+      const stored = isAbsolute(String(path)) ? toPosix(target) : toPosix(relative(dir, target))
+      projects.addMedia([{ id: String(mediaId), path: stored }])
+      return { path: stored }
+    })
+  )
+
+  ipcMain.handle(IPC.mediaDeleteFile, (_e, mediaId: string, path: string) =>
+    guard(async () => {
+      const dir = projects.dir
+      if (!dir) throw new Error('No hay un proyecto abierto.')
+      if (!/^m_[0-9A-Za-z]+$/.test(String(mediaId))) throw new Error('Identificador de medio inválido.')
+      const abs = resolve(projects.resolveMediaPath(dir, String(path)))
+      // Seguridad: solo se borra lo que está dentro de la carpeta del proyecto
+      const rel = relative(resolve(dir), abs)
+      if (!rel || rel.startsWith('..') || isAbsolute(rel)) throw new Error('El archivo está fuera de la carpeta del proyecto; no se borrará.')
+      await rm(abs, { force: true })
+      await rm(join(dir, '.viditor', 'cache', 'waveforms', `${mediaId}.json`), { force: true })
+      await rm(join(dir, '.viditor', 'cache', 'proxies', `${mediaId}.mp4`), { force: true })
+      return null
+    })
+  )
+
+  ipcMain.on(IPC.projectOpenFolder, () => {
+    const dir = projects.dir
+    if (dir && existsSync(dir)) void shell.openPath(dir)
+  })
 
   ipcMain.on(IPC.mediaReveal, (_e, path: string) => {
     const dir = projects.dir

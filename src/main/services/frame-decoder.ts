@@ -100,7 +100,11 @@ class FrameStream {
     const n = this.frameBytes
     while (this.buffered < n) {
       if (this.ended) {
-        if (this.last) return this.last
+        if (this.last) {
+          // Repite el último frame: hay que avanzar el índice o `read()` no termina nunca y bloquea todo el proceso principal
+          this.index++
+          return this.last
+        }
         throw new Error(`FFmpeg no pudo decodificar ${this.src.file}${this.error ? `: ${this.error.trim()}` : ''}`)
       }
       await new Promise<void>((r) => this.waiters.push(r))
@@ -143,6 +147,7 @@ class FrameStream {
     this.proc?.kill()
     this.proc = null
     this.chunks = []
+    this.buffered = 0
     this.wake()
   }
 }

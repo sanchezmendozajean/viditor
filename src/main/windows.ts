@@ -1,10 +1,16 @@
 import { join } from 'node:path'
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { IPC } from '@shared/ipc'
 import { HELP_TOPICS, type HelpTopic } from '@shared/help-topics'
 import { hardenWindow } from './security'
 
 let helpWindow: BrowserWindow | null = null
+const closeAllowed = new WeakSet<BrowserWindow>()
+
+/** Permite que la ventana se cierre en el próximo `close` (el usuario ya resolvió los cambios sin guardar). */
+export function allowClose(win: BrowserWindow): void {
+  closeAllowed.add(win)
+}
 
 export function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -31,8 +37,22 @@ export function createMainWindow(): BrowserWindow {
   const sendMax = (): void => {
     if (!win.isDestroyed()) win.webContents.send(IPC.windowMaximizedChanged, win.isMaximized())
   }
+  // Cerrar: el renderer decide (cambios sin guardar). Solo se cierra de verdad tras `allowClose`.
+  win.on('close', (e) => {
+    if (closeAllowed.has(win) || win.webContents.isDestroyed()) return
+    e.preventDefault()
+    win.webContents.send(IPC.windowCloseRequested)
+  })
   win.on('maximize', sendMax)
   win.on('unmaximize', sendMax)
+
+  // Inspector de elementos (solo en desarrollo): F12 o Ctrl+Shift+I
+  if (!app.isPackaged) {
+    win.webContents.on('before-input-event', (_e, input) => {
+      if (input.type !== 'keyDown') return
+      if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) win.webContents.toggleDevTools()
+    })
+  }
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (devUrl) void win.loadURL(devUrl)

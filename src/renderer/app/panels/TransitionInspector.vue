@@ -108,7 +108,7 @@ function editCode(): void {
 </template>
 
 <style scoped>
-.insp { padding: 10px 12px; }
+.insp { padding: 5px; }
 h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .badge { font-weight: 400; font-size: 9px; padding: 1px 5px; border-radius: 8px; background: #3a3a3a; color: var(--text-dim); }
 .badge.user { background: #2f4a63; color: #9ccaf5; }

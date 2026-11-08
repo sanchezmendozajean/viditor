@@ -12,6 +12,7 @@ Esta tabla se genera desde el catálogo de comandos de la aplicación. Todos los
 | `Ctrl+O` | Abrir proyecto… |
 | `Ctrl+S` | Guardar |
 | `Ctrl+I` | Importar medios… |
+| — | Ir a los archivos del proyecto |
 | — | Cerrar proyecto |
 | `Ctrl+Mayús+E` | Exportar fotograma actual (PNG)… |
 | `Ctrl+M` | Ir a Exportar |
@@ -22,6 +23,8 @@ Esta tabla se genera desde el catálogo de comandos de la aplicación. Todos los
 |-------|--------|
 | `Ctrl+Z` | Deshacer |
 | `Ctrl+Mayús+Z` / `Ctrl+Y` | Rehacer |
+| `Ctrl+C` | Copiar clips |
+| `Ctrl+V` | Pegar clips… |
 | `Ctrl+A` | Seleccionar todo |
 | `Esc` | Quitar la selección |
 | `Supr` / `Retroceso` | Eliminar |

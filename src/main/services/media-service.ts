@@ -10,6 +10,8 @@ const run = promisify(execFile)
 
 const VIDEO_EXT = new Set(['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v', '.mts', '.m2ts', '.wmv', '.flv', '.mpg', '.mpeg'])
 const AUDIO_EXT = new Set(['.mp3', '.wav', '.aac', '.m4a', '.flac', '.ogg', '.opus', '.wma'])
+/** Separación de fotogramas clave (s) a partir de la cual se genera proxy para poder buscar con fluidez. */
+export const MAX_KEY_GAP = 8
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.tif', '.tiff'])
 
 export function mediaKindOf(file: string): MediaItem['kind'] | null {
@@ -40,6 +42,27 @@ function parseRate(rate?: string): { num: number; den: number } | undefined {
   return { num: n, den: d }
 }
 
+/** Separación máxima (s) entre fotogramas clave en los primeros 3 minutos del video (0 si no se pudo medir). */
+export async function maxKeyGap(file: string): Promise<number> {
+  try {
+    const ffprobe = await resolveBinary('ffprobe')
+    const { stdout } = await run(
+      ffprobe,
+      ['-v', 'error', '-select_streams', 'v:0', '-read_intervals', '%+180', '-show_entries', 'packet=pts_time,flags', '-of', 'csv=p=0', file],
+      { maxBuffer: 64 * 1024 * 1024, windowsHide: true }
+    )
+    const keys = stdout.split('\n').filter((l) => l.includes(',K')).map((l) => Number(l.split(',')[0])).filter(Number.isFinite)
+    if (keys.length === 0) return 0
+    // El último tramo hasta el fin de la ventana también cuenta: sin más claves, el hueco llega a los 180 s
+    const last = keys[keys.length - 1] as number
+    let gap = Math.max(0, 180 - last)
+    for (let i = 1; i < keys.length; i++) gap = Math.max(gap, (keys[i] as number) - (keys[i - 1] as number))
+    return gap
+  } catch {
+    return 0
+  }
+}
+
 export async function probeFile(file: string, kind: MediaItem['kind']): Promise<Probe> {
   const ffprobe = await resolveBinary('ffprobe')
   const { stdout } = await run(ffprobe, ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file], {
@@ -61,7 +84,8 @@ export async function probeFile(file: string, kind: MediaItem['kind']): Promise<
     videoCodec: v?.codec_name,
     audioCodec: a?.codec_name,
     rotation: Number.isFinite(rotation) ? rotation : 0,
-    pixFmt: v?.pix_fmt
+    pixFmt: v?.pix_fmt,
+    keyGap: kind === 'video' && v ? await maxKeyGap(file) : undefined
   }
 }
 
@@ -70,7 +94,7 @@ export async function makeThumbnail(file: string, kind: MediaItem['kind'], durat
   const ffmpeg = await resolveBinary('ffmpeg')
   await mkdir(join(out, '..'), { recursive: true })
   const seek = kind === 'video' ? Math.min(1, Math.max(0, duration / 2)) : 0
-  const args = ['-v', 'error', '-y', '-ss', seek.toFixed(2), '-i', file, '-frames:v', '1', '-vf', 'scale=320:-2', '-q:v', '4', out]
+  const args = ['-v', 'error', '-y', '-ss', seek.toFixed(2), '-i', file, '-frames:v', '1', '-vf', 'scale=320:-2', ...(out.endsWith('.png') ? [] : ['-q:v', '4']), out]
   await run(ffmpeg, args, { windowsHide: true })
   return true
 }
@@ -188,10 +212,12 @@ const WEB_AUDIO = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac', 'pcm_s16le', 
 export function needsProxy(m: Pick<MediaItem, 'kind' | 'path' | 'probe'>): boolean {
   if (m.kind !== 'video') return false
   const p = m.probe
+  if (p && !p.videoCodec) return false // sin pista de video (p. ej. audio en .mkv): no hay nada que transcodificar a video
   if (!WEB_CONTAINERS.has(extname(m.path).toLowerCase())) return true
   if (p?.videoCodec && !WEB_VIDEO.has(p.videoCodec)) return true
   if (p?.audioCodec && !WEB_AUDIO.has(p.audioCodec)) return true
   if (p?.pixFmt && /(10|12|16)(le|be)|422|444/.test(p.pixFmt)) return true
+  if ((p?.keyGap ?? 0) > MAX_KEY_GAP) return true // fotogramas clave muy separados: buscar es lento
   return false
 }
 
@@ -203,7 +229,7 @@ export async function makeProxy(src: string, out: string, duration: number, onPr
   const args = [
     '-v', 'error', '-y', '-i', src, '-map', '0:v:0', '-map', '0:a:0?',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
-    '-vf', "scale='min(1920,iw)':-2", '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart',
+    '-vf', "scale='min(1920,iw)':-2", '-g', '15', '-keyint_min', '15', '-sc_threshold', '0', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart',
     '-progress', 'pipe:1', '-nostats', tmp
   ]
   await new Promise<void>((resolve, reject) => {

@@ -70,11 +70,13 @@ export class ImportService {
         }
         const inProject = isInside(projectDir, finalPath)
         const probe = await probeFile(finalPath, kind)
+        // Un contenedor de video (p. ej. .mkv) sin pista de video es, en la práctica, audio.
+        const realKind: MediaItem['kind'] = kind === 'video' && !probe.videoCodec && probe.hasAudio ? 'audio' : kind
         const item: MediaItem = {
           id: 'm_' + ulid(),
           path: inProject ? toPosix(relative(projectDir, finalPath)) : toPosix(finalPath),
           storage: inProject ? 'project' : 'external',
-          kind,
+          kind: realKind,
           binId: f.binId,
           probe
         }

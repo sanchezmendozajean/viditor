@@ -40,6 +40,12 @@ export const useTimelineStore = defineStore('timeline', {
     selectedTransition: null as string | null,
     tool: 'select' as Tool,
     snap: true,
+    /** La línea de tiempo se desplaza sola para mantener visible el cabezal */
+    followPlayhead: true,
+    /** Portapapeles interno de clips (copias profundas con todas sus propiedades) */
+    clipboard: [] as Clip[],
+    /** Tras un salto de cabezal: la línea de tiempo lo centra si queda fuera de la vista (aunque no se siga el cabezal) */
+    revealPlayhead: false,
     /** Se incrementa en cada cambio del historial para que `canUndo/canRedo` sean reactivos. */
     revision: 0,
     history: markRaw(new History<string>()),
@@ -170,6 +176,13 @@ export const useTimelineStore = defineStore('timeline', {
       })
     },
 
+    /** Cambio en vivo sobre el primer clip seleccionado (tiempos y desvanecimientos); se confirma con `commit`. */
+    liveTiming(fn: (p: Project, clipId: string) => void): void {
+      const id = this.editableSelection()[0]
+      if (!id) return
+      useProjectStore().mutate((p) => fn(p, id))
+    },
+
     // ───── Fotogramas clave ─────
 
     /** Crea o quita, en el cabezal, el fotograma de las propiedades dadas de los clips seleccionados. */
@@ -227,7 +240,10 @@ export const useTimelineStore = defineStore('timeline', {
       const times = keyTimes(c, props).map((s) => timelineTimeOf(c, s))
       const here = this.playhead
       const target = dir > 0 ? times.find((x) => x > here + margin) : [...times].reverse().find((x) => x < here - margin)
-      if (target !== undefined) this.setPlayhead(target)
+      if (target !== undefined) {
+        this.revealPlayhead = true
+        this.setPlayhead(target)
+      }
     },
 
     // ───── Cabezal, zoom, selección ─────
@@ -263,6 +279,48 @@ export const useTimelineStore = defineStore('timeline', {
     },
     selectAll(): void {
       this.selection = (this.project?.clips ?? []).map((c) => c.id)
+    },
+
+    /** Copia los clips seleccionados al portapapeles interno. */
+    copySelection(): boolean {
+      const list = this.selectedClips
+      if (!list.length) return false
+      this.clipboard = list.map((c) => ops.clone(c))
+      return true
+    },
+
+    /**
+     * Pega los clips copiados con todas sus propiedades (transformación, audio, fundidos, fotogramas clave…).
+     * Conserva las pistas de origen y la separación entre los clips. Sobrescribe lo que ocupe ese rango.
+     */
+    pasteClips(where: 'playhead' | 'selection' | 'end'): string[] {
+      const p = this.project
+      if (!p || !this.clipboard.length) return []
+      let anchor = this.playhead
+      if (where === 'selection') {
+        if (!this.selectedClips.length) return []
+        anchor = this.selectedClips.reduce((a, c) => Math.max(a, ops.clipEnd(c)), 0)
+      } else if (where === 'end') anchor = p.clips.reduce((a, c) => Math.max(a, ops.clipEnd(c)), 0)
+      const base = Math.min(...this.clipboard.map((c) => c.start))
+      const ids = this.run('Pegar clips', (proj) => {
+        const out: Clip[] = []
+        for (const src of this.clipboard) {
+          const m = proj.media.find((x) => x.id === src.mediaId)
+          if (!m) continue
+          let track = proj.tracks.find((t) => t.id === src.trackId)
+          if (!track) track = this.defaultTrackFor(m.kind === 'audio' ? 'audio' : 'video')
+          if (!track || track.locked) continue
+          const clip = ops.clone(src)
+          clip.id = newId('c_')
+          clip.trackId = track.id
+          clip.start = ops.quantize(proj, Math.max(0, anchor + (src.start - base)))
+          out.push(clip)
+        }
+        ops.placeClips(proj, out, 'overwrite', newId)
+        return out.map((c) => c.id)
+      })
+      if (ids?.length) this.selection = ids
+      return ids ?? []
     },
 
     isLocked(trackId: string): boolean {
@@ -306,6 +364,20 @@ export const useTimelineStore = defineStore('timeline', {
       return id ?? null
     },
 
+    /** Inserta un medio en el cabezal, tras el clip seleccionado o al final de todo el contenido. */
+    addMediaAt(mediaId: string, where: 'playhead' | 'selection' | 'end'): string | null {
+      const p = this.project
+      if (!p) return null
+      if (where === 'playhead') return this.addMedia(mediaId, { start: this.playhead })
+      if (where === 'selection') {
+        const c = this.selectedClips.at(-1)
+        if (!c) return null
+        const end = this.selectedClips.reduce((a, x) => Math.max(a, ops.clipEnd(x)), 0)
+        return this.addMedia(mediaId, { trackId: c.trackId, start: end }) ?? this.addMedia(mediaId, { start: end })
+      }
+      return this.addMedia(mediaId, { start: p.clips.reduce((a, c) => Math.max(a, ops.clipEnd(c)), 0) })
+    },
+
     moveClips(moves: ops.Move[], mode: ops.PlaceMode = 'overwrite'): void {
       this.run('Mover clips', (p) => ops.moveClips(p, moves, mode, newId))
     },
@@ -335,15 +407,19 @@ export const useTimelineStore = defineStore('timeline', {
     },
 
     /** Ctrl+K: divide los clips seleccionados (o todos los de pistas desbloqueadas) bajo el cabezal. */
-    splitAtPlayhead(): void {
+    splitAtPlayhead(): number {
       const t = this.playhead
-      this.run('Dividir en el cabezal', (p) => {
-        const pool = this.selection.length ? this.editableSelection() : p.clips.filter((c) => !this.isLocked(c.trackId)).map((c) => c.id)
-        for (const id of pool) {
-          const c = p.clips.find((x) => x.id === id)
-          if (c && t > c.start && t < ops.clipEnd(c)) ops.splitClip(p, id, t, newId)
-        }
-      })
+      return (
+        this.run('Dividir en el cabezal', (p) => {
+          let n = 0
+          const pool = this.selection.length ? this.editableSelection() : p.clips.filter((c) => !this.isLocked(c.trackId)).map((c) => c.id)
+          for (const id of pool) {
+            const c = p.clips.find((x) => x.id === id)
+            if (c && t > c.start && t < ops.clipEnd(c) && ops.splitClip(p, id, t, newId)) n++
+          }
+          return n
+        }) ?? 0
+      )
     },
 
     deleteSelection(ripple: boolean): void {
@@ -578,10 +654,11 @@ export const useTimelineStore = defineStore('timeline', {
       const p = this.project
       if (!p) return
       const eps = 1e-6
+      // Bordes de clips de cualquier pista, al fotograma: dos bordes en el mismo fotograma cuentan como un solo salto
       const pts = new Set<number>([0])
       for (const c of p.clips) {
-        pts.add(c.start)
-        pts.add(ops.clipEnd(c))
+        pts.add(ops.quantize(p, c.start))
+        pts.add(ops.quantize(p, ops.clipEnd(c)))
       }
       const sorted = [...pts].sort((a, b) => a - b)
       const t = this.playhead

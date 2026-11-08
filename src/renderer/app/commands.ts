@@ -6,6 +6,7 @@ import { useProjectStore } from '@/stores/project'
 import { useAppPrefs } from '@/stores/prefs'
 import { useTimelineStore } from '@/stores/timeline'
 import { useUiStore, type WorkspaceId } from '@/stores/ui'
+import { pasteWithDialog } from './paste'
 
 interface Runner {
   run: () => void
@@ -30,12 +31,15 @@ function runners(): Record<string, Runner> {
     'file.open': { run: () => void project.openWithDialog() },
     'file.save': { run: () => void project.save() },
     'file.import': { run: () => void project.importWithDialog() },
+    'file.openFolder': { run: () => window.viditor.project.openFolder() },
     'file.close': { run: () => void project.close() },
     'export.frame': { run: () => void useExportStore().exportFrame() },
     'view.export': { run: () => setWorkspace('export') },
 
     'edit.undo': { run: () => tl.undo(), enabled: () => tl.canUndo },
     'edit.redo': { run: () => tl.redo(), enabled: () => tl.canRedo },
+    'edit.copy': { run: () => void tl.copySelection(), enabled: hasClip },
+    'edit.paste': { run: () => void pasteWithDialog(), enabled: () => tl.clipboard.length > 0 },
     'edit.selectAll': { run: () => tl.selectAll() },
     'edit.selectNone': { run: () => tl.select([]) },
     'edit.delete': { run: () => (tl.selectedTransition ? tl.removeTransition(tl.selectedTransition) : tl.deleteSelection(false)) },

@@ -36,6 +36,9 @@ const keyMarks = computed(() =>
     .map((s) => (timelineTimeOf(props.clip, s) - props.clip.start) * props.zoom)
     .filter((x) => x >= 0 && x <= width.value)
 )
+// Desvanecimientos visuales: triángulo en el extremo donde se aplican (ancho = duración × zoom)
+const fadeInW = computed(() => Math.min(width.value, (props.clip.fade?.in ?? 0) * props.zoom))
+const fadeOutW = computed(() => Math.min(width.value, (props.clip.fade?.out ?? 0) * props.zoom))
 const wave = computed(() => (props.media ? waves.get(props.media.id) : null))
 const thumb = computed(() => {
   if (props.track.kind !== 'video' || !props.media || props.media.kind === 'audio') return undefined
@@ -76,6 +79,12 @@ function onMove(e: PointerEvent): void {
     <div v-if="wave" class="wavebox" :class="{ small: track.kind === 'video' }">
       <ClipWave :wave="wave" :in-point="clip.in" :out-point="clip.out" :width="width" :height="track.kind === 'video' ? 22 : height - 14" :color="waveColor" />
     </div>
+    <svg v-if="fadeInW > 0" class="fade in" :style="{ width: fadeInW + 'px' }" viewBox="0 0 10 10" preserveAspectRatio="none" data-testid="clip-fade-in">
+      <polygon points="0,0 10,0 0,10" /><line x1="0" y1="10" x2="10" y2="0" />
+    </svg>
+    <svg v-if="fadeOutW > 0" class="fade out" :style="{ width: fadeOutW + 'px' }" viewBox="0 0 10 10" preserveAspectRatio="none" data-testid="clip-fade-out">
+      <polygon points="0,0 10,0 10,10" /><line x1="0" y1="0" x2="10" y2="10" />
+    </svg>
     <i v-for="(x, i) in keyMarks" :key="i" class="kf" :style="{ left: x + 'px' }" data-testid="clip-key" />
     <span class="name">{{ clip.name }}</span>
     <span v-if="clip.audio.muted && track.kind === 'video'" class="muted" title="Audio separado">♪̸</span>
@@ -94,6 +103,11 @@ function onMove(e: PointerEvent): void {
 .name { position: absolute; left: 4px; top: 0; right: 4px; height: 13px; line-height: 13px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; text-shadow: 0 0 2px #000; pointer-events: none; }
 .wavebox { position: absolute; left: 0; right: 0; top: 13px; bottom: 0; }
 .wavebox.small { top: auto; height: 22px; bottom: 0; background: rgba(0, 0, 0, 0.3); }
+.fade { position: absolute; top: 0; bottom: 0; height: 100%; pointer-events: none; overflow: visible; }
+.fade.in { left: 0; }
+.fade.out { right: 0; }
+.fade polygon { fill: rgba(0, 0, 0, 0.5); }
+.fade line { stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .muted { position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: #fff; opacity: 0.8; }
 .kf { position: absolute; bottom: 2px; width: 7px; height: 7px; margin-left: -3.5px; transform: rotate(45deg); background: var(--marker); border: 1px solid rgba(0, 0, 0, 0.6); pointer-events: none; }
 </style>

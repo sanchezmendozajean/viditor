@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
-import type { Clip } from '@shared/project-schema'
+import type { Clip, Project } from '@shared/project-schema'
+import * as ops from '@shared/timeline-ops'
+import { transitionsOfClip } from '@shared/transition-model'
 import { KEY_PROPS, clearKeys, resolveClip, sourceTimeAt, keyAt } from '@shared/keyframes'
 import { clipGeometry, gainToDb } from '@shared/render-model'
-import { clipDuration } from '@shared/timeline-ops'
+import { clipDuration, clipEnd } from '@shared/timeline-ops'
 import { useProjectStore } from '@/stores/project'
 import { useTimelineStore } from '@/stores/timeline'
 import ScrubNumber from '../components/ScrubNumber.vue'
@@ -12,7 +14,7 @@ import KeyToggle from '../components/KeyToggle.vue'
 
 const project = useProjectStore()
 const tl = useTimelineStore()
-const open = reactive({ motion: true, opacity: true, audio: true })
+const open = reactive({ motion: true, opacity: true, timeline: true, audio: true })
 
 const selected = computed<Clip | undefined>(() => tl.selectedClips[0])
 // Valores vistos en el cabezal: con fotogramas clave el inspector muestra el valor animado de ese instante
@@ -46,6 +48,21 @@ function end(label: string): void {
   tl.commit(label, before)
 }
 const live = (fn: (c: Clip) => void): void => tl.liveSelected((c) => fn(c))
+const liveTiming = (fn: (p: Project, id: string) => void): void => tl.liveTiming(fn)
+
+// ───── Línea de tiempo ─────
+/** Un fotograma por píxel de arrastre. */
+const timeStep = computed(() => (project.project ? ops.frameDuration(project.project) : 1 / 30))
+/** Con transiciones en el clip, su posición/duración se cambian desde la transición; en pistas bloqueadas no se edita. */
+const timingLocked = computed(() => {
+  const c = selected.value
+  const p = project.project
+  if (!c || !p) return true
+  return tl.isLocked(c.trackId) || transitionsOfClip(p, c.id).length > 0
+})
+function resetFades(): void {
+  tl.editSelected('Quitar desvanecimientos', (c) => (c.fade = { in: 0, out: 0 }))
+}
 
 // ───── Movimiento ─────
 const fits = [
@@ -135,9 +152,9 @@ const cropKeys = [
   <div v-if="clip && t && geo" class="insp" data-testid="inspector-clip">
     <h3>{{ tl.selection.length > 1 ? `${tl.selection.length} clips` : clip.name }}</h3>
 
-    <div v-if="easeHere" class="ease" data-testid="key-ease">
+    <div class="ease" data-testid="key-ease">
       <span class="dim">Interpolación desde este fotograma</span>
-      <select :value="easeHere" @change="tl.setKeyEase([...KEY_PROPS], ($event.target as HTMLSelectElement).value as 'linear' | 'smooth' | 'hold')">
+      <select :value="easeHere ?? 'linear'" :disabled="!easeHere" title="Requiere un fotograma clave en el cabezal" @change="tl.setKeyEase([...KEY_PROPS], ($event.target as HTMLSelectElement).value as 'linear' | 'smooth' | 'hold')">
         <option value="linear">Lineal</option>
         <option value="smooth">Suave</option>
         <option value="hold">Mantener</option>
@@ -156,13 +173,13 @@ const cropKeys = [
           <option v-for="f in fits" :key="f.v" :value="f.v">{{ f.label }}</option>
         </select>
 
-        <label>Posición<KeyToggle :keys="['x', 'y']" /></label>
+        <label><KeyToggle :keys="['x', 'y']" />Posición</label>
         <div class="pair">
           <ScrubNumber :model-value="t.x" :decimals="1" data-testid="pos-x" @start="start" @update:model-value="live((c) => (c.transform.x = $event))" @end="end('Cambiar posición')" />
           <ScrubNumber :model-value="t.y" :decimals="1" data-testid="pos-y" @start="start" @update:model-value="live((c) => (c.transform.y = $event))" @end="end('Cambiar posición')" />
         </div>
 
-        <label>Ancho / Alto<KeyToggle :keys="['scaleX', 'scaleY']" /></label>
+        <label><KeyToggle :keys="['scaleX', 'scaleY']" />Ancho / Alto</label>
         <div class="pair">
           <ScrubNumber :model-value="geo.bw" :decimals="1" :min="1" data-testid="width" @start="start" @update:model-value="setWidth" @end="end('Cambiar tamaño')" />
           <button class="icon-btn lock" :class="{ on: t.lockAspect }" :title="t.lockAspect ? 'Proporción bloqueada' : 'Proporción libre'" data-testid="lock-aspect" @click="tl.editSelected('Bloquear proporción', (c) => (c.transform.lockAspect = !c.transform.lockAspect))">
@@ -172,11 +189,11 @@ const cropKeys = [
         </div>
 
         <template v-if="t.lockAspect">
-          <label>Escala<KeyToggle :keys="['scaleX', 'scaleY']" /></label>
+          <label><KeyToggle :keys="['scaleX', 'scaleY']" />Escala</label>
           <ScrubNumber :model-value="t.scaleX * 100" :decimals="1" :min="0.1" :max="1000" suffix=" %" data-testid="scale" @start="start" @update:model-value="setScale" @end="end('Cambiar escala')" />
         </template>
 
-        <label>Rotación<KeyToggle :keys="['rotation']" /></label>
+        <label><KeyToggle :keys="['rotation']" />Rotación</label>
         <ScrubNumber :model-value="t.rotation" :decimals="1" suffix="°" data-testid="rotation" @start="start" @update:model-value="live((c) => (c.transform.rotation = $event))" @end="end('Cambiar rotación')" />
 
         <label>Voltear</label>
@@ -215,11 +232,35 @@ const cropKeys = [
         <button class="icon-btn reset" title="Restablecer opacidad" @click.stop="resetOpacity">↺</button>
       </header>
       <div v-if="open.opacity" class="grid" data-testid="group-opacity">
-        <label>Opacidad<KeyToggle :keys="['opacity']" /></label>
+        <label><KeyToggle :keys="['opacity']" />Opacidad</label>
         <div class="pair">
           <input class="range" type="range" min="0" max="100" :value="Math.round(t.opacity * 100)" data-testid="opacity-range" @pointerdown="start" @input="live((c) => (c.transform.opacity = Number(($event.target as HTMLInputElement).value) / 100))" @change="end('Cambiar opacidad')" />
           <ScrubNumber :model-value="t.opacity * 100" :decimals="0" :min="0" :max="100" suffix=" %" data-testid="opacity" @start="start" @update:model-value="live((c) => (c.transform.opacity = $event / 100))" @end="end('Cambiar opacidad')" />
         </div>
+      </div>
+    </section>
+
+    <!-- Línea de tiempo -->
+    <section v-if="selected">
+      <header @click="open.timeline = !open.timeline">
+        <Icon :name="open.timeline ? 'down' : 'right'" :size="12" /><span class="title">Línea de tiempo</span>
+        <button class="icon-btn reset" title="Quitar desvanecimientos" data-testid="reset-timeline" @click.stop="resetFades">↺</button>
+      </header>
+      <div v-if="open.timeline" class="grid" data-testid="group-timeline">
+        <label>Ingresa en</label>
+        <ScrubNumber :model-value="selected.start" :decimals="2" :step="timeStep" :min="0" suffix=" s" :disabled="timingLocked" data-testid="tl-start" title="No puede ser menor que el final del clip anterior de la pista" @start="start" @update:model-value="liveTiming((p, id) => ops.setClipStart(p, id, $event))" @end="end('Cambiar ingreso')" />
+
+        <label>Sale en</label>
+        <ScrubNumber :model-value="clipEnd(selected)" :decimals="2" :step="timeStep" :min="0" suffix=" s" :disabled="timingLocked" data-testid="tl-end" @start="start" @update:model-value="liveTiming((p, id) => ops.setClipEnd(p, id, $event))" @end="end('Cambiar salida')" />
+
+        <label>Duración</label>
+        <ScrubNumber :model-value="fixedDur" :decimals="2" :step="timeStep" :min="timeStep" suffix=" s" :disabled="timingLocked" data-testid="tl-duration" @start="start" @update:model-value="liveTiming((p, id) => ops.setClipDuration(p, id, $event))" @end="end('Cambiar duración')" />
+
+        <label>D. Ingreso</label>
+        <ScrubNumber :model-value="selected.fade?.in ?? 0" :decimals="2" :step="timeStep" :min="0" :max="fixedDur" suffix=" s" data-testid="tl-fade-in" :class="{ 'fade-on': (selected.fade?.in ?? 0) > 0 }" title="Desvanecimiento de ingreso: el alfa pasa de 0 a 1. No modifica la opacidad" @start="start" @update:model-value="liveTiming((p, id) => ops.setClipFade(p, id, 'in', $event))" @end="end('Desvanecimiento de ingreso')" />
+
+        <label>D. Salida</label>
+        <ScrubNumber :model-value="selected.fade?.out ?? 0" :decimals="2" :step="timeStep" :min="0" :max="fixedDur" suffix=" s" data-testid="tl-fade-out" :class="{ 'fade-on': (selected.fade?.out ?? 0) > 0 }" title="Desvanecimiento de salida: el alfa pasa de 1 a 0. No modifica la opacidad" @start="start" @update:model-value="liveTiming((p, id) => ops.setClipFade(p, id, 'out', $event))" @end="end('Desvanecimiento de salida')" />
       </div>
     </section>
 
@@ -231,9 +272,9 @@ const cropKeys = [
       </header>
       <div v-if="open.audio" class="grid" data-testid="group-audio">
         <template v-if="hasAudio">
-          <label>Volumen<KeyToggle :keys="['volume']" /></label>
+          <label><KeyToggle :keys="['volume']" />Volumen</label>
           <div class="pair">
-            <ScrubNumber :model-value="clip.audio.volume * 100" :decimals="0" :min="0" :max="200" suffix=" %" data-testid="volume" @start="start" @update:model-value="live((c) => (c.audio.volume = $event / 100))" @end="end('Cambiar volumen del clip')" />
+            <ScrubNumber :model-value="clip.audio.volume * 100" :decimals="0" :min="0" :max="200" suffix=" %" data-testid="volume" :class="{ 'fade-on': Math.abs(clip.audio.volume - 1) > 0.0005 }" @start="start" @update:model-value="live((c) => (c.audio.volume = $event / 100))" @end="end('Cambiar volumen del clip')" />
             <span class="dim db mono" data-testid="volume-db">{{ db }}</span>
           </div>
           <label>Silenciar</label>
@@ -250,16 +291,16 @@ const cropKeys = [
 </template>
 
 <style scoped>
-.insp { padding: 6px 0 12px; }
-h3 { margin: 4px 12px 6px; font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insp { padding: 5px; }
+h3 { margin: 0 0 5px; font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 section { border-top: 1px solid var(--border); }
 header { display: flex; align-items: center; gap: 4px; height: 24px; padding: 0 6px 0 8px; cursor: pointer; background: var(--bg-panel-header); }
 .fx { font-style: italic; color: var(--accent); font-weight: 600; width: 14px; }
 .title { flex: 1; font-weight: 600; }
 .reset { font-size: 13px; width: 20px; }
-.ease { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 10px; }
+.ease { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; }
 .ease select { width: 90px; }
-.grid { display: grid; grid-template-columns: 96px 1fr; gap: 5px 8px; padding: 8px 10px; align-items: center; }
+.grid { display: grid; grid-template-columns: 96px 1fr; gap: 5px 8px; padding: 5px 0; align-items: center; }
 label { color: var(--text-dim); }
 .pair { display: flex; align-items: center; gap: 4px; }
 .pair > * { flex: 1; min-width: 0; }
@@ -277,5 +318,7 @@ select { width: 100%; font-size: 11px; }
 .crop-item { display: flex; align-items: center; justify-content: space-between; }
 .range { accent-color: var(--accent); }
 .db { flex: none; min-width: 52px; text-align: right; }
+.fade-on :deep(.val) { color: #ff3dd8; }
+.fade-on :deep(.val:hover) { color: #ff7be8; }
 .span { grid-column: 1 / -1; margin: 0; }
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { clipGeometry, clipMatrix, solvePosition, applyMatrix, worldCenter, activeClipsAt } from '@shared/render-model'
 import { formatTimecode, parseTimecode } from '@shared/timecode'
 import { engine } from '@/engine/engine'
@@ -82,7 +82,9 @@ const corners = computed(() => {
   return { tl: P(0, 0), tr: P(1, 0), br: P(1, 1), bl: P(0, 1) }
 })
 const poly = computed(() => (corners.value ? [corners.value.tl, corners.value.tr, corners.value.br, corners.value.bl].map((p) => p.join(',')).join(' ') : ''))
-const k = computed(() => 1 / Math.max(0.1, (stage.value?.getBoundingClientRect().width ?? W.value) / W.value)) // unidades de proyecto por píxel de pantalla
+// El tamaño en pantalla del lienzo solo se conoce tras pintar: se recalcula tras cada cambio de zoom.
+const layoutTick = ref(0)
+const k = computed(() => (layoutTick.value, 1) / Math.max(0.1, (stage.value?.getBoundingClientRect().width ?? W.value) / W.value)) // unidades de proyecto por píxel de pantalla
 const hs = computed(() => 5 * k.value)
 
 const handles = computed(() => {
@@ -109,7 +111,8 @@ const rotHandle = computed(() => {
   return { from: top, pos: [top[0] + (dx / len) * off, top[1] + (dy / len) * off] as [number, number] }
 })
 const anchorPos = computed(() => (target.value ? applyMatrix(target.value.m, target.value.clip.transform.anchorX, target.value.clip.transform.anchorY) : null))
-const guides = ref<{ v: boolean; h: boolean }>({ v: false, h: false })
+/** Posiciones (en unidades de proyecto) de las guías activas: verticales (x) y horizontales (y). */
+const guides = ref<{ xs: number[]; ys: number[] }>({ xs: [], ys: [] })
 
 function toProject(e: { clientX: number; clientY: number }): [number, number] {
   const r = stage.value?.getBoundingClientRect()
@@ -126,7 +129,7 @@ function gesture(e: PointerEvent, label: string, onMove: (p: [number, number], e
   const up = (): void => {
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', up)
-    guides.value = { v: false, h: false }
+    guides.value = { xs: [], ys: [] }
     tl.commit(label, before)
   }
   window.addEventListener('pointermove', move)
@@ -139,17 +142,35 @@ function startMove(e: PointerEvent): void {
   const p0 = toProject(e)
   const x0 = t.clip.transform.x
   const y0 = t.clip.transform.y
-  const c0 = worldCenter(t.m)
+  const cs = t.m && corners.value ? [corners.value.tl, corners.value.tr, corners.value.br, corners.value.bl] : []
+  const bx = cs.map((q) => q[0])
+  const by = cs.map((q) => q[1])
+  // Bordes y centro del recuadro del clip, que se imantan a los bordes y al centro del lienzo
+  const ex = [Math.min(...bx), (Math.min(...bx) + Math.max(...bx)) / 2, Math.max(...bx)]
+  const ey = [Math.min(...by), (Math.min(...by) + Math.max(...by)) / 2, Math.max(...by)]
+  const snapAxis = (edges: number[], d: number, targets: number[], thr: number): { d: number; line: number | null } => {
+    let best: { d: number; line: number } | null = null
+    for (const ed of edges) for (const tg of targets) {
+      const off = tg - (ed + d)
+      if (Math.abs(off) < thr && (!best || Math.abs(off) < Math.abs(best.d - d))) best = { d: d + off, line: tg }
+    }
+    return best ?? { d, line: null }
+  }
   gesture(e, 'Mover clip', (p, ev) => {
     let dx = p[0] - p0[0]
     let dy = p[1] - p0[1]
-    // Guías de centrado con imán
     const snap = 6 * k.value
-    const gv = !ev.altKey && Math.abs(c0[0] + dx - W.value / 2) < snap
-    const gh = !ev.altKey && Math.abs(c0[1] + dy - H.value / 2) < snap
-    if (gv) dx = W.value / 2 - c0[0]
-    if (gh) dy = H.value / 2 - c0[1]
-    guides.value = { v: gv, h: gh }
+    const xs: number[] = []
+    const ys: number[] = []
+    if (!ev.altKey) {
+      const sx = snapAxis(ex, dx, [0, W.value / 2, W.value], snap)
+      const sy = snapAxis(ey, dy, [0, H.value / 2, H.value], snap)
+      dx = sx.d
+      dy = sy.d
+      if (sx.line !== null) xs.push(sx.line)
+      if (sy.line !== null) ys.push(sy.line)
+    }
+    guides.value = { xs, ys }
     tl.liveSelected((c) => {
       c.transform.x = Math.round((x0 + dx) * 10) / 10
       c.transform.y = Math.round((y0 + dy) * 10) / 10
@@ -245,19 +266,59 @@ function startAnchor(e: PointerEvent): void {
   })
 }
 
-const cursorFor = (hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (hu * hv > 0 ? 'nwse-resize' : 'nesw-resize') : hu !== 0 ? 'ew-resize' : 'ns-resize')
+// ───────── Teclado y rueda sobre el clip seleccionado ─────────
+
+/** Zoom de la vista previa en %, relativo al ajuste al panel (100 % = el lienzo cabe en el monitor). No cambia el proyecto. */
+const ZOOM_MIN = 50
+const ZOOM_MAX = 150
+const ZOOM_STEP = 10
+const viewZoom = ref(100)
+watch(viewZoom, () => layoutTick.value++, { flush: 'post' })
+
+/** Cambio puntual de transformación como un solo comando de historial. */
+function quickEdit(label: string, fn: Parameters<typeof tl.liveSelected>[0]): void {
+  const before = tl.snapshot()
+  tl.liveSelected(fn)
+  tl.commit(label, before)
+}
+
+function onMonitorKey(e: KeyboardEvent): void {
+  const tag = (e.target as HTMLElement).tagName
+  if (tag === 'INPUT' || tag === 'SELECT' || e.ctrlKey || e.metaKey || e.altKey) return
+  const dir: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+  const d = dir[e.key]
+  if (!d || !target.value) return // sin clip transformable, las flechas siguen moviendo fotogramas
+  e.preventDefault()
+  e.stopPropagation()
+  // 1 píxel de la vista previa (10 con Mayús), convertido a unidades de proyecto
+  const step = k.value * (e.shiftKey ? 10 : 1)
+  const dx = Math.round(d[0] * step * 10) / 10
+  const dy = Math.round(d[1] * step * 10) / 10
+  quickEdit('Mover clip', (c) => {
+    c.transform.x = Math.round((c.transform.x + dx) * 10) / 10
+    c.transform.y = Math.round((c.transform.y + dy) * 10) / 10
+  })
+}
+
+function onWheel(e: WheelEvent): void {
+  if (!e.deltaY) return
+  const next = Math.round(viewZoom.value / ZOOM_STEP) * ZOOM_STEP + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)
+  viewZoom.value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next))
+}
+
+const cursorFor =(hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (hu * hv > 0 ? 'nwse-resize' : 'nesw-resize') : hu !== 0 ? 'ew-resize' : 'ns-resize')
 </script>
 
 <template>
   <Panel title="Monitor del programa" help="monitor">
-    <div class="monitor">
+    <div class="monitor" tabindex="0" data-testid="monitor" @pointerdown.capture="($event.currentTarget as HTMLElement).focus({ preventScroll: true })" @keydown="onMonitorKey" @wheel.prevent="onWheel">
       <div class="stage">
-        <div class="frame" :style="{ '--ratio': ratio }" data-testid="monitor-frame">
+        <div class="frame" :style="{ '--ratio': ratio, '--zoom': viewZoom / 100 }" data-testid="monitor-frame">
           <canvas ref="canvas" class="gl" data-testid="monitor-canvas" />
           <svg ref="stage" class="overlay" :viewBox="`0 0 ${W} ${H}`" preserveAspectRatio="none" @pointerdown.self="tl.select([])">
             <template v-if="target && corners">
-              <line v-if="guides.v" :x1="W / 2" y1="0" :x2="W / 2" :y2="H" class="guide" />
-              <line v-if="guides.h" x1="0" :y1="H / 2" :x2="W" :y2="H / 2" class="guide" />
+              <line v-for="gx in guides.xs" :key="'x' + gx" :x1="gx" y1="0" :x2="gx" :y2="H" class="guide" />
+              <line v-for="gy in guides.ys" :key="'y' + gy" x1="0" :y1="gy" :x2="W" :y2="gy" class="guide" />
               <polygon :points="poly" class="box" data-testid="transform-box" @pointerdown="startMove" />
               <template v-if="rotHandle">
                 <line :x1="rotHandle.from[0]" :y1="rotHandle.from[1]" :x2="rotHandle.pos[0]" :y2="rotHandle.pos[1]" class="rot-line" />
@@ -301,6 +362,7 @@ const cursorFor = (hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (h
           <button class="icon-btn" :class="{ on: pb.loop }" title="Bucle" data-testid="loop" @click="pb.loop = !pb.loop"><Icon name="repeat" :size="14" /></button>
         </div>
         <div class="right">
+          <button class="zoom mono" :title="'Zoom de la vista previa (rueda del mouse). Clic: 100 %'" data-testid="view-zoom" @click="viewZoom = 100"><Icon name="search" :size="12" /> {{ viewZoom }} %</button>
           <select :value="pb.quality" title="Calidad de la vista previa" data-testid="quality" @change="engine.setQuality(($event.target as HTMLSelectElement).value as Quality)">
             <option v-for="q in qualities" :key="q.v" :value="q.v">{{ q.label }}</option>
           </select>
@@ -314,9 +376,9 @@ const cursorFor = (hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (h
 </template>
 
 <style scoped>
-.monitor { height: 100%; background: var(--monitor-bg); display: flex; flex-direction: column; }
-.stage { flex: 1; min-height: 0; container-type: size; display: grid; place-items: center; }
-.frame { position: relative; width: min(94cqw, calc(94cqh * var(--ratio))); aspect-ratio: var(--ratio); outline: 1px solid var(--border-subtle); background: #000; }
+.monitor { outline: none; height: 100%; background: var(--monitor-bg); display: flex; flex-direction: column; }
+.stage { flex: 1; min-height: 0; overflow: hidden; container-type: size; display: grid; place-items: center; }
+.frame { position: relative; width: calc(min(94cqw, calc(94cqh * var(--ratio))) * var(--zoom, 1)); aspect-ratio: var(--ratio); outline: 1px solid var(--border-subtle); background: #000; }
 .gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .box { fill: transparent; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: move; }
@@ -336,6 +398,8 @@ const cursorFor = (hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (h
 .icon-btn.on { color: var(--accent); }
 .right { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .right select { padding: 1px 4px; font-size: 10.5px; }
+.zoom { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 1px 4px; font-size: 10.5px; color: var(--text-dim); cursor: pointer; }
+.zoom:hover { color: var(--text); }
 .master { width: 70px; accent-color: var(--accent); }
 .dur { min-width: 72px; text-align: right; }
 </style>
