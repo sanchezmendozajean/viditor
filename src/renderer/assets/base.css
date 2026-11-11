@@ -27,6 +27,8 @@ button.btn {
 button.btn:hover { background: var(--bg-hover); }
 button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.btn.primary:hover { background: var(--accent-hover); }
+button.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.btn.danger:hover { background: var(--danger-hover); }
 button.btn:disabled { opacity: 0.45; cursor: default; }
 button.icon-btn {
   display: inline-flex; align-items: center; justify-content: center;

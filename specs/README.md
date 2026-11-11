@@ -20,6 +20,7 @@ Material complementario:
 
 - [`transiciones/viditor-transitions.d.ts`](transiciones/viditor-transitions.d.ts) — tipos de la API (autocompletado en el editor de transiciones).
 - [`transiciones/ejemplos/`](transiciones/ejemplos/) — transiciones de referencia escritas con la API.
+- [`design/modales.md`](design/modales.md) — rediseño aprobado de los modales (maqueta en `design/modales.html`) con las tareas de actualización.
 
 ## Flujo de trabajo previsto
 

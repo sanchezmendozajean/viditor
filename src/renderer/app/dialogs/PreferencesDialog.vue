@@ -68,7 +68,7 @@ async function onRecordKey(e: KeyboardEvent): Promise<void> {
 </script>
 
 <template>
-  <Modal title="Preferencias" @close="ui.prefsOpen = false">
+  <Modal title="Preferencias" icon="settings" :width="680" @close="ui.prefsOpen = false">
     <div class="body" data-testid="preferences">
       <nav class="tabs">
         <button :class="{ on: tab === 'general' }" data-testid="prefs-tab-general" @click="tab = 'general'">General</button>
@@ -117,14 +117,14 @@ async function onRecordKey(e: KeyboardEvent): Promise<void> {
           <button class="btn" :disabled="Object.keys(prefs.shortcuts).length === 0" data-testid="prefs-reset-all" @click="prefs.update({ shortcuts: {} })">Restablecer todos</button>
         </div>
       </div>
-
-      <footer><button class="btn primary" data-testid="prefs-close" @click="ui.prefsOpen = false">Cerrar</button></footer>
     </div>
+    <template #footer>
+      <button class="btn primary" data-testid="prefs-close" @click="ui.prefsOpen = false">Cerrar</button>
+    </template>
   </Modal>
 </template>
 
 <style scoped>
-.body { width: 640px; max-width: 86vw; font-size: 12px; }
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
 .tabs button { background: none; border: 0; padding: 6px 12px; cursor: pointer; color: var(--text-dim); border-bottom: 2px solid transparent; }
 .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
@@ -143,6 +143,5 @@ async function onRecordKey(e: KeyboardEvent): Promise<void> {
 .keybtn { background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: var(--radius); padding: 2px 6px; text-align: left; cursor: pointer; font-size: 10.5px; color: var(--text); }
 .keybtn.rec { border-color: var(--accent); color: var(--accent); }
 .foot { display: flex; justify-content: flex-start; margin-top: 8px; }
-footer { display: flex; justify-content: flex-end; margin-top: 14px; }
 .dim { color: var(--text-dim); }
 </style>

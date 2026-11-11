@@ -83,7 +83,7 @@ function insertMenu(e: MouseEvent): void {
 </script>
 
 <template>
-  <Modal :title="name" closable @close="close">
+  <Modal :title="name" icon="film" :width="932" @close="close">
     <div class="body" data-testid="media-preview-dialog">
       <p v-if="failed" class="dim fail">No se puede reproducir este archivo en la vista previa.</p>
       <img v-else-if="media?.kind === 'image'" :src="src" :alt="name" />
@@ -104,7 +104,7 @@ function insertMenu(e: MouseEvent): void {
 </template>
 
 <style scoped>
-.body { width: min(900px, 80vw); }
+.body { width: 100%; }
 video, img { display: block; width: 100%; max-height: 65vh; object-fit: contain; background: #000; }
 audio { display: none; }
 video { cursor: pointer; }

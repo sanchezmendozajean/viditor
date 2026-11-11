@@ -24,7 +24,7 @@ function choose(m: ImportChoice['mode'], confirm = false): void {
 </script>
 
 <template>
-  <Modal :title="`Importar ${ui.importAsk?.count ?? 0} ${ui.importAsk?.count === 1 ? 'archivo' : 'archivos'}`" @close="answer(false)">
+  <Modal :title="`Importar ${ui.importAsk?.count ?? 0} ${ui.importAsk?.count === 1 ? 'archivo' : 'archivos'}`" icon="upload" :width="480" @close="answer(false)">
     <div class="body" data-testid="import-dialog">
       <p>¿Qué hacer con los archivos?</p>
       <div class="opts" role="radiogroup" aria-label="Qué hacer con los archivos">
@@ -45,17 +45,16 @@ function choose(m: ImportChoice['mode'], confirm = false): void {
           <span class="txt"><strong>{{ o.title }}</strong><span class="dim">{{ o.text }}</span></span>
         </button>
       </div>
-      <footer>
-        <label class="remember"><input v-model="remember" type="checkbox" /> Recordar mi elección para este proyecto</label>
-        <button class="btn" @click="answer(false)">Cancelar</button>
-        <button class="btn primary" data-testid="import-confirm" @click="answer(true)">Importar</button>
-      </footer>
     </div>
+    <template #footer>
+      <label class="remember"><input v-model="remember" type="checkbox" /> Recordar mi elección para este proyecto</label>
+      <button class="btn" @click="answer(false)">Cancelar</button>
+      <button class="btn primary" data-testid="import-confirm" @click="answer(true)">Importar</button>
+    </template>
   </Modal>
 </template>
 
 <style scoped>
-.body { width: 460px; font-size: 12px; }
 p { margin: 0 0 8px; }
 .opts { display: flex; flex-direction: column; gap: 6px; }
 .opt { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; padding: 8px 12px; background: var(--bg-panel-header); border: 1px solid var(--border-subtle); border-radius: 3px; cursor: pointer; color: var(--text); }
@@ -65,5 +64,4 @@ p { margin: 0 0 8px; }
 .on .ico { color: var(--accent); }
 .txt { display: flex; flex-direction: column; gap: 2px; }
 .remember { display: flex; gap: 8px; align-items: center; margin-right: auto; color: var(--text-dim); cursor: pointer; }
-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 </style>

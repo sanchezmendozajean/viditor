@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modales de Viditor</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: página oscura como la app; cada propuesta se muestra sobre un "lienzo" que simula el fondo de Viditor */
+:root {
+  color-scheme: dark;
+  --bg-app: #1b1b1b; --bg-panel: #232323; --bg-head: #2a2a2a; --bg-input: #1a1a1a; --bg-hover: #333;
+  --border: #121212; --border-subtle: #3a3a3a; --text: #d6d6d6; --text-dim: #8c8c8c;
+  --accent: #2d8ceb; --accent-hover: #4aa3f5; --danger: #e5484d; --danger-hover: #f2676b; --warn: #f5a524; --ok: #46a758;
+  --font-ui: 'Source Sans 3', 'Segoe UI', sans-serif; --font-mono: 'JetBrains Mono', Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { background: #151515; color: var(--text); font-family: var(--font-ui); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; }
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 40px; }
+header.page h1 { font-size: 26px; margin: 0 0 6px; font-weight: 700; text-wrap: balance; }
+header.page p { margin: 0; color: var(--text-dim); max-width: 68ch; }
+h2.sec { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); margin: 0 0 14px; font-weight: 600; }
+.points { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.point { background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 12px 14px; }
+.point b { display: block; font-size: 13px; margin-bottom: 2px; }
+.point span { color: var(--text-dim); font-size: 13px; }
+
+/* Lienzo que simula la app detrás del modal */
+.stage { background: repeating-linear-gradient(135deg, #1d1d1d 0 12px, #1a1a1a 12px 24px); border: 1px solid var(--border); border-radius: 6px;
+  padding: 40px 16px; display: grid; place-items: center; position: relative; overflow: hidden; }
+.stage::before { content: ""; position: absolute; inset: 0; background: #000a; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; }
+.cap { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+.cap code { font-family: var(--font-mono); font-size: 11px; color: var(--text); }
+
+/* ===== Modal propuesto ===== */
+.m { position: relative; width: 100%; max-width: 440px; background: var(--bg-panel); border: 1px solid var(--border-subtle);
+  border-radius: 6px; box-shadow: 0 0 0 1px #0008, 0 16px 48px #000c; overflow: hidden; font-size: 13px;
+  --tone: var(--accent); }
+.m.danger { --tone: var(--danger); }
+.m.warn { --tone: var(--warn); }
+.m.wide { max-width: 480px; }
+.m-head { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; background: var(--bg-head);
+  border-bottom: 1px solid var(--border); box-shadow: inset 0 2px 0 var(--tone); }
+.m-badge { flex: none; width: 28px; height: 28px; border-radius: 5px; display: grid; place-items: center;
+  color: var(--tone); background: color-mix(in srgb, var(--tone) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent); }
+.m-titles { flex: 1; min-width: 0; }
+.m-title { font-size: 13px; font-weight: 600; margin: 0; line-height: 1.25; }
+.m-sub { font-size: 11px; color: var(--text-dim); margin: 0; }
+.m-x { flex: none; width: 26px; height: 26px; border: 0; background: none; color: var(--text-dim); border-radius: 4px; display: grid; place-items: center; cursor: pointer; }
+.m-x:hover { background: var(--bg-hover); color: var(--text); }
+.m-x:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.m-body { padding: 16px 16px 6px; display: grid; gap: 10px; }
+.m-body p { margin: 0; }
+.dim { color: var(--text-dim); }
+.file { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; font-family: var(--font-mono); font-size: 11.5px; }
+.file svg { color: var(--text-dim); flex: none; }
+.file .meta { margin-left: auto; color: var(--text-dim); }
+.note { display: flex; gap: 8px; padding: 8px 10px; border-radius: 4px; font-size: 12px;
+  background: color-mix(in srgb, var(--tone) 9%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 25%, transparent); }
+.note svg { color: var(--tone); flex: none; margin-top: 2px; }
+.m-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 12px 16px; margin-top: 10px; border-top: 1px solid var(--border); background: #1f1f1f; }
+.m-foot .left { margin-right: auto; color: var(--text-dim); font-size: 11px; }
+kbd { font-family: var(--font-mono); font-size: 10px; padding: 1px 4px; border: 1px solid var(--border-subtle); border-radius: 3px; background: var(--bg-input); }
+.btn { font: inherit; font-size: 12px; font-weight: 600; height: 28px; padding: 0 14px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--border-subtle); background: var(--bg-hover); color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { background: #3c3c3c; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.danger:hover { background: var(--danger-hover); }
+
+/* Formulario */
+.form { display: grid; gap: 12px; }
+.grp { display: grid; gap: 10px; }
+.grp-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.grp-label::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle); }
+.f { display: grid; gap: 4px; }
+.f label { font-size: 12px; color: var(--text-dim); }
+.in { height: 28px; padding: 0 9px; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text); font: inherit; font-size: 12px; width: 100%; }
+.in:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+.row { display: flex; gap: 6px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cols3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
+@media (max-width: 480px) { .cols, .cols3 { grid-template-columns: 1fr; } }
+.swatch { display: flex; align-items: center; gap: 8px; }
+.swatch i { width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--border-subtle); background: #000; }
+.swatch span { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+/* Anatomía */
+.anat { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: center; }
+@media (max-width: 760px) { .anat { grid-template-columns: 1fr; } }
+.legend { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.legend li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; font-size: 13px; }
+.legend .n { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.legend b { font-weight: 600; }
+.legend span { color: var(--text-dim); }
+
+/* Tonos */
+.tones { display: flex; flex-wrap: wrap; gap: 10px; }
+.tone { display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 8px; background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 4px; font-size: 12px; }
+.tone .m-badge { width: 26px; height: 26px; }
+.tone small { color: var(--text-dim); display: block; font-size: 11px; }
+
+/* Código */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
+.tab { font: inherit; font-size: 12px; background: none; border: 0; color: var(--text-dim); padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.code { position: relative; }
+pre { margin: 0; background: #161616; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 4px 4px; padding: 14px; overflow-x: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: #cfcfcf; max-height: 520px; }
+.copy { position: absolute; top: 8px; right: 8px; }
+.c-k { color: #c586c0; } .c-s { color: #ce9178; } .c-t { color: #4ec9b0; } .c-c { color: #6a9955; } .c-a { color: #9cdcfe; }
+@media (prefers-reduced-motion: no-preference) { .btn, .m-x, .tab { transition: background .12s, color .12s, border-color .12s; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="page">
+    <h1>Modales de Viditor</h1>
+    <p>Propuesta de rediseño para los diálogos: cabecera con distintivo de color, ícono, título con subtítulo opcional y la X integrada. El cuerpo y el pie quedan separados en bandas para que las acciones se encuentren siempre en el mismo lugar.</p>
+  </header>
+
+  <section>
+    <h2 class="sec">Qué cambia</h2>
+    <div class="points">
+      <div class="point"><b>Cabecera propia</b><span>Banda con fondo de cabecera de panel, igual que los paneles de la app.</span></div>
+      <div class="point"><b>Distintivo por tono</b><span>Línea superior de 2 px y ícono con fondo tintado: azul, rojo o ámbar según la acción.</span></div>
+      <div class="point"><b>X en el título</b><span>Alineada al centro de la cabecera, con área de clic de 26 px y foco visible.</span></div>
+      <div class="point"><b>Pie fijo</b><span>Las acciones van en una banda inferior, con atajos de teclado a la izquierda.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Anatomía</h2>
+    <div class="anat">
+      <div class="stage">
+        <div class="m" style="position:relative">
+          <div class="m-head">
+            <div class="m-badge"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v6M9 14h6"/></svg></div>
+            <div class="m-titles"><p class="m-title">Título del diálogo</p><p class="m-sub">Subtítulo opcional</p></div>
+            <button class="m-x" aria-label="Cerrar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
+          <div class="m-body"><p class="dim">Contenido del diálogo (slot por defecto).</p></div>
+          <div class="m-foot"><span class="left"><kbd>Esc</kbd> cerrar</span><button class="btn">Cancelar</button><button class="btn primary">Aceptar</button></div>
+        </div>
+      </div>
+      <ol class="legend">
+        <li><span class="n">1</span><div><b>Línea de tono.</b> <span>2 px en el borde superior, con el color de <code>tone</code>.</span></div></li>
+        <li><span class="n">2</span><div><b>Ícono.</b> <span>28 px, fondo al 16 % del tono y borde al 35 %.</span></div></li>
+        <li><span class="n">3</span><div><b>Título y subtítulo.</b> <span>13 px semibold; el subtítulo en 11 px atenuado.</span></div></li>
+        <li><span class="n">4</span><div><b>Botón cerrar.</b> <span>Dentro del flujo de la cabecera, ya no flota sobre el contenido.</span></div></li>
+        <li><span class="n">5</span><div><b>Pie.</b> <span>Slot <code>#footer</code>, con pista de teclado opcional a la izquierda.</span></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Aplicado a tus diálogos</h2>
+    <div class="pair">
+      <div>
+        <div class="stage">
+          <div class="m danger">
+            <div class="m-head">
+              <div class="m-badge"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg></div>
+              <div class="m-titles"><p class="m-title">Eliminar recurso</p><p class="m-sub">Esta acción no se puede deshacer</p></div>
+              <button class="m-x" aria-label="Cerrar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="m-body">
+              <p>Este archivo se eliminará físicamente del disco y no podrá recuperarse desde Viditor:</p>
+              <div class="file"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg>2026-11-11 09-56-03.mp4<span class="meta">0:36</span></div>
+              <div class="note"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span>Sus clips en la línea de tiempo también se quitarán.</span></div>
+            </div>
+            <div class="m-foot"><span class="left"><kbd>Esc</kbd> cancelar</span><button class="btn">Cancelar</button><button class="btn danger">Eliminar del disco</button></div>
+          </div>
+        </div>
+        <p class="cap"><code>tone="danger"</code> · el botón destructivo pasa a rojo y su texto dice exactamente qué hace.</p>
+      </div>
+
+      <div>
+        <div class="stage">
+          <div class="m wide">
+            <div class="m-head">
+              <div class="m-badge"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v6M9 14h6"/></svg></div>
+              <div class="m-titles"><p class="m-title">Nuevo proyecto</p><p class="m-sub">Configura la secuencia inicial</p></div>
+              <button class="m-x" aria-label="Cerrar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            </div>
+            <div class="m-body form">
+              <div class="grp">
+                <div class="grp-label">General</div>
+                <div class="f"><label for="np-name">Nombre</label><input id="np-name" class="in" value="Proyecto sin título"></div>
+                <div class="f"><label for="np-loc">Ubicación</label><div class="row"><input id="np-loc" class="in" value="C:\Users\Jean Paul\Documents\Viditor"><button class="btn">Examinar…</button></div></div>
+              </div>
+              <div class="grp">
+                <div class="grp-label">Secuencia</div>
+                <div class="cols3">
+                  <div class="f"><label for="np-res">Resolución</label><select id="np-res" class="in"><option>1920 × 1080 (Full HD)</option></select></div>
+                  <div class="f"><label for="np-fps">FPS</label><select id="np-fps" class="in"><option>30</option></select></div>
+                  <div class="f"><label for="np-hz">Audio</label><select id="np-hz" class="in"><option>48 000 Hz</option></select></div>
+                </div>
+                <div class="cols">
+                  <div class="f"><label>Color de fondo</label><div class="swatch"><i></i><span>#000000</span></div></div>
+                  <div class="f"><label for="np-imp">Al importar medios</label><select id="np-imp" class="in"><option>Preguntar siempre</option></select></div>
+                </div>
+              </div>
+            </div>
+            <div class="m-foot"><span class="left"><kbd>Enter</kbd> crear</span><button class="btn">Cancelar</button><button class="btn primary">Crear proyecto</button></div>
+          </div>
+        </div>
+        <p class="cap"><code>tone="accent"</code> · campos agrupados en "General" y "Secuencia"; resolución, FPS y audio en una fila.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Tonos disponibles</h2>
+    <div class="tones">
+      <div class="tone"><div class="m-badge" style="--tone:var(--accent)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg></div><div>accent<small>Crear, importar, preferencias</small></div></div>
+      <div class="tone"><div class="m-badge" style="--tone:var(--danger)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6l-1 14H6L5 6"/></svg></div><div>danger<small>Eliminar, descartar</small></div></div>
+      <div class="tone"><div class="m-badge" style="--tone:var(--warn)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div><div>warn<small>Cerrar sin guardar</small></div></div>
+      <div class="tone"><div class="m-badge" style="--tone:var(--ok)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m5 12 5 5 9-10"/></svg></div><div>ok<small>Exportación terminada</small></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Implementación</h2>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-t="modal">components/Modal.vue</button>
+      <button class="tab" role="tab" aria-selected="false" data-t="delete">dialogs/DeleteMediaDialog.vue</button>
+    </div>
+    <div class="code">
+      <button class="btn copy" id="copy">Copiar</button>
+<pre id="code-modal"><span class="c-k">&lt;script</span> <span class="c-a">setup</span> <span class="c-a">lang</span>=<span class="c-s">"ts"</span><span class="c-k">&gt;</span>
+<span class="c-k">import</span> { onMounted, onUnmounted } <span class="c-k">from</span> <span class="c-s">'vue'</span>
+<span class="c-k">import</span> Icon <span class="c-k">from</span> <span class="c-s">'./Icon.vue'</span>
+
+<span class="c-k">type</span> <span class="c-t">Tone</span> = <span class="c-s">'accent'</span> | <span class="c-s">'danger'</span> | <span class="c-s">'warn'</span> | <span class="c-s">'ok'</span>
+
+<span class="c-k">const</span> props = withDefaults(defineProps&lt;{
+  title: <span class="c-t">string</span>
+  subtitle?: <span class="c-t">string</span>
+  icon?: <span class="c-t">string</span>          <span class="c-c">// nombre de Icon.vue</span>
+  tone?: <span class="c-t">Tone</span>
+  width?: <span class="c-t">number</span>
+  closable?: <span class="c-t">boolean</span>
+  hint?: <span class="c-t">string</span>          <span class="c-c">// "Esc cancelar", etc.</span>
+}&gt;(), { tone: <span class="c-s">'accent'</span>, width: <span class="c-s">440</span>, closable: <span class="c-k">true</span> })
+
+<span class="c-k">const</span> emit = defineEmits&lt;{ close: [] }&gt;()
+<span class="c-k">function</span> onKey(e: <span class="c-t">KeyboardEvent</span>): <span class="c-t">void</span> { <span class="c-k">if</span> (e.key === <span class="c-s">'Escape'</span>) emit(<span class="c-s">'close'</span>) }
+onMounted(() =&gt; window.addEventListener(<span class="c-s">'keydown'</span>, onKey))
+onUnmounted(() =&gt; window.removeEventListener(<span class="c-s">'keydown'</span>, onKey))
+<span class="c-k">&lt;/script&gt;</span>
+
+<span class="c-k">&lt;template&gt;</span>
+  <span class="c-k">&lt;div</span> <span class="c-a">class</span>=<span class="c-s">"backdrop"</span> @pointerdown.self=<span class="c-s">"emit('close')"</span><span class="c-k">&gt;</span>
+    <span class="c-k">&lt;div</span> <span class="c-a">class</span>=<span class="c-s">"dialog"</span> :<span class="c-a">class</span>=<span class="c-s">"`tone-${tone}`"</span> :<span class="c-a">style</span>=<span class="c-s">"{ width: width + 'px' }"</span>
+         <span class="c-a">role</span>=<span class="c-s">"dialog"</span> <span class="c-a">aria-modal</span>=<span class="c-s">"true"</span> :<span class="c-a">aria-label</span>=<span class="c-s">"title"</span><span class="c-k">&gt;</span>
+      <span class="c-k">&lt;header</span> <span class="c-a">class</span>=<span class="c-s">"head"</span><span class="c-k">&gt;</span>
+        <span class="c-k">&lt;span</span> <span class="c-a">v-if</span>=<span class="c-s">"icon"</span> <span class="c-a">class</span>=<span class="c-s">"badge"</span><span class="c-k">&gt;&lt;Icon</span> :<span class="c-a">name</span>=<span class="c-s">"icon"</span> :<span class="c-a">size</span>=<span class="c-s">"15"</span> <span class="c-k">/&gt;&lt;/span&gt;</span>
+        <span class="c-k">&lt;div</span> <span class="c-a">class</span>=<span class="c-s">"titles"</span><span class="c-k">&gt;</span>
+          <span class="c-k">&lt;h2&gt;</span>{{ title }}<span class="c-k">&lt;/h2&gt;</span>
+          <span class="c-k">&lt;p</span> <span class="c-a">v-if</span>=<span class="c-s">"subtitle"</span><span class="c-k">&gt;</span>{{ subtitle }}<span class="c-k">&lt;/p&gt;</span>
+        <span class="c-k">&lt;/div&gt;</span>
+        <span class="c-k">&lt;button</span> <span class="c-a">v-if</span>=<span class="c-s">"closable"</span> <span class="c-a">class</span>=<span class="c-s">"x"</span> <span class="c-a">title</span>=<span class="c-s">"Cerrar"</span> <span class="c-a">aria-label</span>=<span class="c-s">"Cerrar"</span>
+                <span class="c-a">data-testid</span>=<span class="c-s">"modal-close"</span> @click=<span class="c-s">"emit('close')"</span><span class="c-k">&gt;</span>
+          <span class="c-k">&lt;Icon</span> <span class="c-a">name</span>=<span class="c-s">"x"</span> :<span class="c-a">size</span>=<span class="c-s">"14"</span> <span class="c-k">/&gt;</span>
+        <span class="c-k">&lt;/button&gt;</span>
+      <span class="c-k">&lt;/header&gt;</span>
+      <span class="c-k">&lt;div</span> <span class="c-a">class</span>=<span class="c-s">"body"</span><span class="c-k">&gt;&lt;slot /&gt;&lt;/div&gt;</span>
+      <span class="c-k">&lt;footer</span> <span class="c-a">v-if</span>=<span class="c-s">"$slots.footer"</span> <span class="c-a">class</span>=<span class="c-s">"foot"</span><span class="c-k">&gt;</span>
+        <span class="c-k">&lt;span</span> <span class="c-a">v-if</span>=<span class="c-s">"hint"</span> <span class="c-a">class</span>=<span class="c-s">"hint"</span><span class="c-k">&gt;</span>{{ hint }}<span class="c-k">&lt;/span&gt;</span>
+        <span class="c-k">&lt;slot</span> <span class="c-a">name</span>=<span class="c-s">"footer"</span> <span class="c-k">/&gt;</span>
+      <span class="c-k">&lt;/footer&gt;</span>
+    <span class="c-k">&lt;/div&gt;</span>
+  <span class="c-k">&lt;/div&gt;</span>
+<span class="c-k">&lt;/template&gt;</span>
+
+<span class="c-k">&lt;style</span> <span class="c-a">scoped</span><span class="c-k">&gt;</span>
+.backdrop { position: fixed; inset: 0; background: #000a; display: grid; place-items: center; z-index: 100; }
+.dialog { --tone: var(--accent); max-width: 90vw; background: var(--bg-panel);
+  border: 1px solid var(--border-subtle); border-radius: 6px; overflow: hidden;
+  box-shadow: 0 0 0 1px #0008, 0 16px 48px #000c; animation: pop .14s ease-out; }
+.tone-danger { --tone: var(--danger); }
+.tone-warn   { --tone: var(--warn); }
+.tone-ok     { --tone: var(--ok); }
+
+.head { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px;
+  background: var(--bg-panel-header); border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 2px 0 var(--tone); }
+.badge { flex: none; width: 28px; height: 28px; border-radius: 5px; display: grid; place-items: center;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent); }
+.titles { flex: 1; min-width: 0; }
+h2 { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.25; }
+.titles p { margin: 0; font-size: 11px; color: var(--text-dim); }
+.x { flex: none; display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+  background: none; border: 0; border-radius: 4px; cursor: pointer; color: var(--text-dim); }
+.x:hover { background: var(--bg-hover); color: var(--text); }
+.x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.body { padding: 16px; font-size: 12px; }
+.foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  padding: 12px 16px; border-top: 1px solid var(--border); background: #1f1f1f; }
+.hint { margin-right: auto; font-size: 11px; color: var(--text-dim); }
+
+@keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .dialog { animation: none; } }
+<span class="c-k">&lt;/style&gt;</span></pre>
+<pre id="code-delete" hidden><span class="c-k">&lt;template&gt;</span>
+  <span class="c-k">&lt;Modal</span>
+    <span class="c-a">title</span>=<span class="c-s">"Eliminar recurso"</span>
+    <span class="c-a">subtitle</span>=<span class="c-s">"Esta acción no se puede deshacer"</span>
+    <span class="c-a">icon</span>=<span class="c-s">"trash"</span>
+    <span class="c-a">tone</span>=<span class="c-s">"danger"</span>
+    <span class="c-a">hint</span>=<span class="c-s">"Esc cancelar"</span>
+    :<span class="c-a">width</span>=<span class="c-s">"440"</span>
+    @close=<span class="c-s">"ui.deleteAsk?.resolve(false)"</span>
+  <span class="c-k">&gt;</span>
+    <span class="c-k">&lt;div</span> <span class="c-a">class</span>=<span class="c-s">"body"</span> <span class="c-a">data-testid</span>=<span class="c-s">"delete-media-dialog"</span><span class="c-k">&gt;</span>
+      <span class="c-k">&lt;p&gt;</span>Este archivo se eliminará físicamente del disco y no podrá recuperarse desde Viditor:<span class="c-k">&lt;/p&gt;</span>
+      <span class="c-k">&lt;div</span> <span class="c-a">class</span>=<span class="c-s">"file"</span><span class="c-k">&gt;</span>
+        <span class="c-k">&lt;Icon</span> <span class="c-a">name</span>=<span class="c-s">"film"</span> :<span class="c-a">size</span>=<span class="c-s">"14"</span> <span class="c-k">/&gt;</span> {{ ui.deleteAsk?.name }}
+      <span class="c-k">&lt;/div&gt;</span>
+      <span class="c-k">&lt;div</span> <span class="c-a">class</span>=<span class="c-s">"note"</span><span class="c-k">&gt;</span>
+        <span class="c-k">&lt;Icon</span> <span class="c-a">name</span>=<span class="c-s">"alert"</span> :<span class="c-a">size</span>=<span class="c-s">"13"</span> <span class="c-k">/&gt;</span>
+        Sus clips en la línea de tiempo también se quitarán.
+      <span class="c-k">&lt;/div&gt;</span>
+    <span class="c-k">&lt;/div&gt;</span>
+    <span class="c-k">&lt;template</span> #footer<span class="c-k">&gt;</span>
+      <span class="c-k">&lt;button</span> <span class="c-a">class</span>=<span class="c-s">"btn"</span> @click=<span class="c-s">"ui.deleteAsk?.resolve(false)"</span><span class="c-k">&gt;</span>Cancelar<span class="c-k">&lt;/button&gt;</span>
+      <span class="c-k">&lt;button</span> <span class="c-a">class</span>=<span class="c-s">"btn danger"</span> <span class="c-a">data-testid</span>=<span class="c-s">"delete-media-confirm"</span>
+              @click=<span class="c-s">"ui.deleteAsk?.resolve(true)"</span><span class="c-k">&gt;</span>Eliminar del disco<span class="c-k">&lt;/button&gt;</span>
+    <span class="c-k">&lt;/template&gt;</span>
+  <span class="c-k">&lt;/Modal&gt;</span>
+<span class="c-k">&lt;/template&gt;</span>
+
+<span class="c-k">&lt;style</span> <span class="c-a">scoped</span><span class="c-k">&gt;</span>
+.body { display: grid; gap: 10px; }
+p { margin: 0; }
+.file { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px;
+  font-family: var(--font-mono); font-size: 11.5px; }
+.note { display: flex; gap: 8px; padding: 8px 10px; border-radius: 4px; color: var(--text);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent); }
+.note :deep(svg) { color: var(--danger); flex: none; margin-top: 2px; }
+<span class="c-c">/* .btn.danger va mejor en base.css junto a .btn.primary */</span>
+<span class="c-k">&lt;/style&gt;</span></pre>
+    </div>
+    <p class="cap">Requiere que <code>Icon.vue</code> tenga <code>trash</code>, <code>folder-plus</code>, <code>film</code> y <code>alert</code>, y una clase <code>.btn.danger</code> en <code>base.css</code>. Los diálogos sin slot <code>#footer</code> siguen funcionando, pero conviene migrarlos para que todos tengan el pie en banda.</p>
+  </section>
+</div>
+
+<script>
+const tabs = document.querySelectorAll('.tab');
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x => x.setAttribute('aria-selected', x === t ? 'true' : 'false'));
+  document.getElementById('code-modal').hidden = t.dataset.t !== 'modal';
+  document.getElementById('code-delete').hidden = t.dataset.t !== 'delete';
+}));
+document.getElementById('copy').addEventListener('click', async (e) => {
+  const pre = [...document.querySelectorAll('pre')].find(p => !p.hidden);
+  try { await navigator.clipboard.writeText(pre.innerText); e.target.textContent = 'Copiado'; }
+  catch { const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); e.target.textContent = 'Selecciona y copia'; }
+  setTimeout(() => e.target.textContent = 'Copiar', 1600);
+});
+</script>
+</body>
+</html>

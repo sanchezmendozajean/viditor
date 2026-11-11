@@ -19,20 +19,18 @@ function discardAndExit(): void {
 </script>
 
 <template>
-  <Modal title="Cambios sin guardar" @close="cancel">
-    <div class="body" data-testid="close-dialog">
+  <Modal title="Cambios sin guardar" icon="alert" tone="warn" hint="Esc cancelar" @close="cancel">
+    <div data-testid="close-dialog">
       <p>El proyecto <strong>{{ project.projectName }}</strong> tiene cambios sin guardar. ¿Quieres guardarlos antes de salir?</p>
-      <footer>
-        <button class="btn" data-testid="close-cancel" @click="cancel">Cancelar</button>
-        <button class="btn" data-testid="close-discard" @click="discardAndExit">No guardar</button>
-        <button class="btn primary" data-testid="close-save" @click="saveAndExit">Guardar y salir</button>
-      </footer>
     </div>
+    <template #footer>
+      <button class="btn" data-testid="close-cancel" @click="cancel">Cancelar</button>
+      <button class="btn" data-testid="close-discard" @click="discardAndExit">No guardar</button>
+      <button class="btn primary" data-testid="close-save" @click="saveAndExit">Guardar y salir</button>
+    </template>
   </Modal>
 </template>
 
 <style scoped>
-.body { width: 420px; font-size: 12px; }
-p { margin: 0 0 8px; }
-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+p { margin: 0; }
 </style>
