@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promise
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { app } from 'electron'
 import { FORMAT_VERSION, type Project } from '@shared/project-schema'
+import { isGeneratedKind } from '@shared/generated'
 import { parseProject } from '@shared/migrations'
 import type { NewProjectRequest, OpenedProject, RecentProject } from '@shared/ipc'
 import type { MediaItem } from '@shared/project-schema'
@@ -104,7 +105,7 @@ export class ProjectService {
     const dir = dirname(abs)
     await mkdir(join(dir, '.viditor', 'cache'), { recursive: true })
     await mkdir(join(dir, '.viditor', 'backups'), { recursive: true })
-    const missing = project.media.filter((m) => !existsSync(this.resolveMediaPath(dir, m.path))).map((m) => m.id)
+    const missing = project.media.filter((m) => !isGeneratedKind(m.kind) && !existsSync(this.resolveMediaPath(dir, m.path))).map((m) => m.id)
     this.file = abs
     this.syncMedia(project.media)
     await this.pushRecent(abs, project.name)

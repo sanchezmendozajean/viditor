@@ -169,6 +169,9 @@ export const useExportStore = defineStore('export', {
       const project = useProjectStore().project
       const ui = useUiStore()
       if (!project || this.running) return
+      // Los cambios pendientes se guardan antes de empezar; si no se puede guardar, no se exporta
+      const proj = useProjectStore()
+      if (proj.dirty && !(await proj.save())) return
       if (!this.outputPath) await this.refreshOutput()
       const options = this.options()
       const snapshot = JSON.parse(JSON.stringify(project)) as typeof project

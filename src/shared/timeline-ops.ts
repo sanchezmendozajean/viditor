@@ -4,6 +4,7 @@
  * Tiempos en segundos; siempre se cuantizan al frame del proyecto cuando proviene del usuario.
  */
 import type { Clip, MediaItem, Project, Track, Transition } from './project-schema'
+import { GENERATED_DEFAULT_DURATION, defaultGenerator, generatorTitle, isGeneratedKind, type GeneratedKind } from './generated'
 import { lockedEdges, maxTransitionDuration, minClipDuration, transitionRange, transitionsOfClip } from './transition-model'
 
 export const EPS = 1e-6
@@ -39,7 +40,7 @@ export function trackById(p: Project, id: string): Track | undefined {
 /** Duración máxima utilizable de un medio (imágenes: ilimitada). */
 export function mediaLimit(m: MediaItem | undefined): number {
   if (!m) return Infinity
-  return m.kind === 'image' ? Infinity : (m.probe?.duration ?? Infinity)
+  return m.kind === 'image' || isGeneratedKind(m.kind) ? Infinity : (m.probe?.duration ?? Infinity)
 }
 
 /**
@@ -48,11 +49,18 @@ export function mediaLimit(m: MediaItem | undefined): number {
  */
 export function mediaFitsTrack(m: MediaItem, t: Track): boolean {
   if (m.kind === 'audio') return t.kind === 'audio'
+  if (isGeneratedKind(m.kind)) return t.kind === 'video'
   return t.kind === 'video' || (m.kind === 'video' && Boolean(m.probe?.hasAudio))
 }
 
 export function makeClip(p: Project, m: MediaItem, trackId: string, start: number, id: string): Clip {
-  const dur = m.kind === 'image' ? 5 : Math.max(m.probe?.duration ?? 0, frameDuration(p))
+  const generated = isGeneratedKind(m.kind)
+  const dur = generated
+    ? Math.max(GENERATED_DEFAULT_DURATION, frameDuration(p))
+    : m.kind === 'image'
+      ? 5
+      : Math.max(m.probe?.duration ?? 0, frameDuration(p))
+  const generator = generated ? defaultGenerator(m.kind as GeneratedKind, p.settings) : undefined
   return {
     id,
     mediaId: m.id,
@@ -61,11 +69,13 @@ export function makeClip(p: Project, m: MediaItem, trackId: string, start: numbe
     in: 0,
     out: dur,
     speed: 1,
-    name: m.path.split('/').pop() ?? m.path,
+    name: generator ? generatorTitle(generator) : (m.path.split('/').pop() ?? m.path),
     color: null,
     enabled: true,
+    ...(generator ? { generator } : {}),
     transform: {
-      fit: 'fit', x: 0, y: 0, scaleX: 1, scaleY: 1, lockAspect: true, rotation: 0,
+      // El texto y las formas se dibujan a su tamaño propio (en píxeles del proyecto): sin ajuste al cuadro
+      fit: generated ? 'none' : 'fit', x: 0, y: 0, scaleX: 1, scaleY: 1, lockAspect: true, rotation: 0,
       flipH: false, flipV: false, anchorX: 0.5, anchorY: 0.5, opacity: 1,
       crop: { left: 0, top: 0, right: 0, bottom: 0 }
     },

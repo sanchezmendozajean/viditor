@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { markRaw } from 'vue'
 import { ulid } from 'ulid'
 import { History } from '@shared/history'
-import type { Clip, Keyframe, Project, Track } from '@shared/project-schema'
+import type { Clip, Keyframe, MediaItem, Project, Track } from '@shared/project-schema'
+import { GENERATED_DEFAULT_DURATION, generatedLabel, isGeneratedKind, type GeneratedKind } from '@shared/generated'
 import {
   KEY_PROPS,
   clearKeys,
@@ -304,10 +305,31 @@ export const useTimelineStore = defineStore('timeline', {
       const base = Math.min(...this.clipboard.map((c) => c.start))
       const ids = this.run('Pegar clips', (proj) => {
         const out: Clip[] = []
+        // La pista seleccionada manda: los clips del mismo tipo se pegan en ella (si se copiaron de varias pistas,
+        // se conserva la separación entre pistas a partir de la seleccionada). Sin pista seleccionada, en su pista de origen.
+        const sel = proj.tracks.find((t) => t.id === this.selectedTrackId)
+        const kindOf = (src: Clip, m: MediaItem): Track['kind'] => proj.tracks.find((t) => t.id === src.trackId)?.kind ?? (m.kind === 'audio' ? 'audio' : 'video')
+        const ofKind = (k: Track['kind']): Track[] => proj.tracks.filter((t) => t.kind === k)
+        let anchor = -1
+        if (sel) {
+          const idxs = this.clipboard
+            .filter((c) => proj.tracks.find((t) => t.id === c.trackId)?.kind === sel.kind)
+            .map((c) => ofKind(sel.kind).findIndex((t) => t.id === c.trackId))
+          anchor = idxs.length ? Math.min(...idxs) : -1
+        }
         for (const src of this.clipboard) {
           const m = proj.media.find((x) => x.id === src.mediaId)
           if (!m) continue
-          let track = proj.tracks.find((t) => t.id === src.trackId)
+          const kind = kindOf(src, m)
+          let track: Track | undefined
+          if (sel && kind === sel.kind && ops.mediaFitsTrack(m, sel)) {
+            const list = ofKind(kind)
+            const from = list.findIndex((t) => t.id === src.trackId)
+            const base = list.findIndex((t) => t.id === sel.id)
+            track = anchor >= 0 && from >= 0 ? (list[base + (from - anchor)] ?? sel) : sel
+          } else {
+            track = proj.tracks.find((t) => t.id === src.trackId)
+          }
           if (!track) track = this.defaultTrackFor(m.kind === 'audio' ? 'audio' : 'video')
           if (!track || track.locked) continue
           const clip = ops.clone(src)
@@ -368,6 +390,8 @@ export const useTimelineStore = defineStore('timeline', {
     addMediaAt(mediaId: string, where: 'playhead' | 'selection' | 'end'): string | null {
       const p = this.project
       if (!p) return null
+      const gm = p.media.find((x) => x.id === mediaId)
+      if (gm && isGeneratedKind(gm.kind)) return this.addGenerated(gm.kind, where, null, mediaId) // capa superpuesta: nunca pisa otro clip
       if (where === 'playhead') return this.addMedia(mediaId, { start: this.playhead })
       if (where === 'selection') {
         const c = this.selectedClips.at(-1)
@@ -376,6 +400,50 @@ export const useTimelineStore = defineStore('timeline', {
         return this.addMedia(mediaId, { trackId: c.trackId, start: end }) ?? this.addMedia(mediaId, { start: end })
       }
       return this.addMedia(mediaId, { start: p.clips.reduce((a, c) => Math.max(a, ops.clipEnd(c)), 0) })
+    },
+
+    /**
+     * Crea un recurso de texto o forma y coloca un clip de 1 s. Un texto/forma es una capa superpuesta: nunca pisa
+     * otro clip, así que va a la pista de video seleccionada si está libre en ese rango, si no a la primera libre
+     * (de arriba abajo), y si no hay ninguna se crea una pista de video nueva encima.
+     */
+    addGenerated(kind: GeneratedKind, where: 'playhead' | 'selection' | 'end', binId: string | null = null, existingMediaId?: string): string | null {
+      const p = this.project
+      if (!p) return null
+      let start = this.playhead
+      let prefer = this.selectedTrackId
+      if (where === 'selection') {
+        const sel = this.selectedClips
+        if (!sel.length) return null
+        start = sel.reduce((a, c) => Math.max(a, ops.clipEnd(c)), 0)
+        prefer = sel.at(-1)?.trackId ?? prefer
+      } else if (where === 'end') {
+        start = p.clips.reduce((a, c) => Math.max(a, ops.clipEnd(c)), 0)
+      }
+      start = ops.quantize(p, Math.max(0, start))
+      const dur = Math.max(GENERATED_DEFAULT_DURATION, ops.frameDuration(p))
+      const label = generatedLabel(kind)
+      const res = this.run(kind === 'text' ? 'Agregar texto' : 'Agregar rectángulo', (proj) => {
+        let media = existingMediaId ? proj.media.find((m) => m.id === existingMediaId) : undefined
+        if (!media) {
+          const used = new Set(proj.media.filter((m) => m.kind === kind).map((m) => m.name))
+          let n = 1
+          while (used.has(n === 1 ? label : `${label} ${n}`)) n++
+          const created: MediaItem = { id: newId('m_'), path: '', storage: 'project', kind, name: n === 1 ? label : `${label} ${n}`, binId }
+          proj.media.push(created)
+          media = created
+        }
+        const free = (t: Track): boolean =>
+          t.kind === 'video' && !t.locked && !proj.clips.some((c) => c.trackId === t.id && c.start < start + dur - ops.EPS && ops.clipEnd(c) > start + ops.EPS)
+        const track = proj.tracks.find((t) => t.id === prefer && free(t)) ?? proj.tracks.find(free) ?? ops.addTrack(proj, 'video', proj.tracks.find((t) => t.kind === 'video')?.id ?? null, 'above', newId)
+        const clip = ops.makeClip(proj, media, track.id, start, newId('c_'))
+        ops.placeClips(proj, [clip], 'overwrite', newId)
+        return { id: clip.id, trackId: track.id }
+      })
+      if (!res) return null
+      this.selection = [res.id]
+      this.selectedTrackId = res.trackId
+      return res.id
     },
 
     moveClips(moves: ops.Move[], mode: ops.PlaceMode = 'overwrite'): void {

@@ -28,6 +28,7 @@ import {
 import { IPC } from '@shared/ipc'
 import type { AudioMode } from '@shared/transition-model'
 import { sourceSize } from '@shared/render-model'
+import { isGeneratedKind } from '@shared/generated'
 import type { Project } from '@shared/project-schema'
 import { hardenWindow } from '../security'
 import { FrameDecoderPool } from './frame-decoder'
@@ -131,7 +132,7 @@ export class ExportService {
     if (!dir) throw new Error('No hay un proyecto abierto.')
     const used = new Set(project.clips.filter((c) => c.enabled).map((c) => c.mediaId))
     for (const m of project.media) {
-      if (used.has(m.id) && !existsSync(this.projects.resolveMediaPath(dir, m.path))) {
+      if (used.has(m.id) && !isGeneratedKind(m.kind) && !existsSync(this.projects.resolveMediaPath(dir, m.path))) {
         throw new Error(`Falta el archivo de "${basename(m.path)}". Revincúlalo antes de exportar.`)
       }
     }

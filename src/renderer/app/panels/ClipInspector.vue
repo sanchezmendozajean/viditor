@@ -4,13 +4,14 @@ import type { Clip, Project } from '@shared/project-schema'
 import * as ops from '@shared/timeline-ops'
 import { transitionsOfClip } from '@shared/transition-model'
 import { KEY_PROPS, clearKeys, resolveClip, sourceTimeAt, keyAt } from '@shared/keyframes'
-import { clipGeometry, gainToDb } from '@shared/render-model'
+import { clipGeometry, gainToDb, keepAnchorOnResize, type Geometry } from '@shared/render-model'
 import { clipDuration, clipEnd } from '@shared/timeline-ops'
 import { useProjectStore } from '@/stores/project'
 import { useTimelineStore } from '@/stores/timeline'
 import ScrubNumber from '../components/ScrubNumber.vue'
 import Icon from '../components/Icon.vue'
 import KeyToggle from '../components/KeyToggle.vue'
+import GeneratorInspector from './GeneratorInspector.vue'
 
 const project = useProjectStore()
 const tl = useTimelineStore()
@@ -73,30 +74,45 @@ const fits = [
 ]
 const anchors = [0, 0.5, 1]
 
+/** Cambia la escala dejando fijo el punto de anclaje (no el centro). */
+function rescale(c: Clip, g: Geometry, fn: () => void): void {
+  const size = (): { bw: number; bh: number } => ({ bw: g.cw * g.fx * c.transform.scaleX, bh: g.ch * g.fy * c.transform.scaleY })
+  const from = size()
+  fn()
+  keepAnchorOnResize(c.transform, from, size())
+}
 function setWidth(w: number): void {
   const g = geo.value
   if (!g) return
-  live((c) => {
-    const base = g.cw * g.fx
-    const nx = Math.max(0.001, w / base)
-    if (c.transform.lockAspect) c.transform.scaleY = c.transform.scaleY * (nx / (c.transform.scaleX || 1))
-    c.transform.scaleX = nx
-  })
+  live((c) =>
+    rescale(c, g, () => {
+      const base = g.cw * g.fx
+      const nx = Math.max(0.001, w / base)
+      if (c.transform.lockAspect) c.transform.scaleY = c.transform.scaleY * (nx / (c.transform.scaleX || 1))
+      c.transform.scaleX = nx
+    })
+  )
 }
 function setHeight(h: number): void {
   const g = geo.value
   if (!g) return
-  live((c) => {
-    const base = g.ch * g.fy
-    const ny = Math.max(0.001, h / base)
-    if (c.transform.lockAspect) c.transform.scaleX = c.transform.scaleX * (ny / (c.transform.scaleY || 1))
-    c.transform.scaleY = ny
-  })
+  live((c) =>
+    rescale(c, g, () => {
+      const base = g.ch * g.fy
+      const ny = Math.max(0.001, h / base)
+      if (c.transform.lockAspect) c.transform.scaleX = c.transform.scaleX * (ny / (c.transform.scaleY || 1))
+      c.transform.scaleY = ny
+    })
+  )
 }
 function setScale(pct: number): void {
-  live((c) => {
-    c.transform.scaleX = c.transform.scaleY = Math.max(0.001, pct / 100)
-  })
+  const g = geo.value
+  if (!g) return
+  live((c) =>
+    rescale(c, g, () => {
+      c.transform.scaleX = c.transform.scaleY = Math.max(0.001, pct / 100)
+    })
+  )
 }
 function setAnchor(ax: number, ay: number): void {
   // Mover el anclaje no debe mover la imagen: se recalcula la posición (mismo centro, otro pivote).
@@ -160,6 +176,9 @@ const cropKeys = [
         <option value="hold">Mantener</option>
       </select>
     </div>
+
+    <!-- Texto / forma -->
+    <GeneratorInspector v-if="selected?.generator" />
 
     <!-- Movimiento -->
     <section>
@@ -265,7 +284,7 @@ const cropKeys = [
     </section>
 
     <!-- Audio -->
-    <section>
+    <section v-if="!selected?.generator">
       <header @click="open.audio = !open.audio">
         <Icon :name="open.audio ? 'down' : 'right'" :size="12" /><span class="fx">fx</span><span class="title">Audio</span>
         <button class="icon-btn reset" title="Restablecer audio" @click.stop="resetAudio">↺</button>

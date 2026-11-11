@@ -28,6 +28,8 @@ export function createMainWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      // Sin corrector ortográfico de Chromium: rutas, nombres de archivo y comandos no son texto para corregir.
+      spellcheck: false,
       // La reproducción de audio/vídeo no debe exigir un gesto del usuario (el motor arranca desde atajos de teclado).
       autoplayPolicy: 'no-user-gesture-required'
     }

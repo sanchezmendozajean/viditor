@@ -7,7 +7,9 @@ export const prefsSchema = z.object({
   /** Atajos personalizados: id de comando → combinaciones (lista vacía = sin atajo) */
   shortcuts: z.record(z.string().max(64), z.array(z.string().min(1).max(40)).max(4)).default({}),
   /** Carpeta de transiciones del usuario; null = la predeterminada */
-  transitionsDir: z.string().max(1024).nullable().default(null)
+  transitionsDir: z.string().max(1024).nullable().default(null),
+  /** Guías inteligentes del monitor (imán a bordes y centro del lienzo al mover y redimensionar) */
+  smartGuides: z.boolean().default(true)
 })
 
 export type Prefs = z.infer<typeof prefsSchema>

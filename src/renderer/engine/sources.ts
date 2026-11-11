@@ -3,7 +3,7 @@ import type { MediaItem } from '@shared/project-schema'
 export interface SourceEntry {
   clipId: string
   mediaId: string
-  kind: 'video' | 'audio' | 'image'
+  kind: MediaItem['kind']
   /** <video> también para audio: así el mismo elemento da imagen y sonido */
   el: HTMLVideoElement | HTMLImageElement
   url: string

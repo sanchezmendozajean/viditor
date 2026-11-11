@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Clip, MediaItem, Track } from '@shared/project-schema'
-import { clipDuration, clipEnd, gapAt, mediaFitsTrack, quantize, snapPoints, snapTime, trackClips, trimClip, type Move } from '@shared/timeline-ops'
+import { engine } from '@/engine/engine'
+import { isGeneratedKind } from '@shared/generated'
+import { clipDuration,clipEnd, gapAt, mediaFitsTrack, quantize, snapPoints, snapTime, trackClips, trimClip, type Move } from '@shared/timeline-ops'
 import { formatTimecode } from '@shared/timecode'
 import { useProjectStore } from '@/stores/project'
 import { useTimelineStore, type Tool } from '@/stores/timeline'
@@ -95,7 +97,7 @@ function snapped(t: number, exclude: Set<string>): number {
 // ───────── Cabezal / regla ─────────
 
 function onScrub(e: PointerEvent): void {
-  const set = (ev: PointerEvent): void => tl.setPlayhead(snapped(timeAt(ev), new Set()))
+  const set = (ev: PointerEvent): void => engine.seek(snapped(timeAt(ev), new Set()))
   set(e)
   const move = (ev: PointerEvent): void => set(ev)
   const up = (): void => {
@@ -353,7 +355,7 @@ function onDragOver(e: DragEvent): void {
   if (!hit.media && !external) return void (dropPreview.value = null)
   e.preventDefault()
   const start = snapped(quantize(p.value as never, timeAt(e)), new Set())
-  dropPreview.value = { trackId: hit.track.id, start, dur: hit.media?.kind === 'image' ? 5 : (hit.media?.probe?.duration ?? 3) }
+  dropPreview.value = { trackId: hit.track.id, start, dur: hit.media?.kind === 'image' ? 5 : isGeneratedKind(hit.media?.kind) ? 1 : (hit.media?.probe?.duration ?? 3) }
 }
 async function onDrop(e: DragEvent): Promise<void> {
   if (ui.dragTransitionRef) {
@@ -515,7 +517,7 @@ function clipMenu(e: MouseEvent, clip: Clip): void {
     { separator: true, label: '' },
     { label: 'Restablecer transformación', disabled: locked, action: () => tl.resetTransform() },
     ...(project.missing.includes(clip.mediaId) ? [{ label: 'Revincular medio…', action: () => void project.relink(clip.mediaId) }] : []),
-    { label: 'Mostrar en el explorador', disabled: !m, action: () => m && window.viditor.media.reveal(m.path) },
+    { label: 'Mostrar en el explorador', disabled: !m || isGeneratedKind(m.kind), action: () => m && window.viditor.media.reveal(m.path) },
     { label: 'Propiedades', disabled: true }
   ]
   ui.openMenu(e, items)
@@ -685,7 +687,7 @@ function clipsOf(t: Track): Clip[] {
         <div class="content" :style="{ width: HEADER_W + contentW + 'px', height: Math.max(totalH, 1) + 'px' }">
           <div class="ruler-row">
             <div class="corner mono" data-testid="timecode">{{ tc(tl.playhead) }}</div>
-            <TimelineRuler ref="ruler" :zoom="zoom" :width="contentW" :fps-num="fps.num" :fps-den="fps.den" :markers="p.markers" @scrub="onScrub" @marker="tl.setPlayhead($event)" @rename="tl.renameMarker" @menu="markerMenu" />
+            <TimelineRuler ref="ruler" :zoom="zoom" :width="contentW" :fps-num="fps.num" :fps-den="fps.den" :markers="p.markers" @scrub="onScrub" @marker="engine.seek($event)" @rename="tl.renameMarker" @menu="markerMenu" />
             <div class="ph-cap" :style="{ left: playheadX + 'px' }" />
           </div>
 

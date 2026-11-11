@@ -14,7 +14,7 @@ export const useWaveStore = defineStore('waves', {
       return e?.state === 'ready' ? e.wave : null
     },
     async ensure(m: MediaItem): Promise<void> {
-      if (this.entries[m.id] || m.kind === 'image' || (m.kind === 'video' && !m.probe?.hasAudio)) return
+      if (this.entries[m.id] || m.kind === 'image' || m.kind === 'text' || m.kind === 'shape' || (m.kind === 'video' && !m.probe?.hasAudio)) return
       this.entries[m.id] = { state: 'loading' }
       const r = await window.viditor.media.waveform(m.id, m.path)
       this.entries[m.id] = r.ok ? { state: 'ready', wave: markRaw(r.value) } : { state: 'none' }

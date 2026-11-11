@@ -36,9 +36,9 @@ function choose(o: { value: Where; disabled?: boolean }, confirm = false): void 
 </script>
 
 <template>
-  <Modal :title="count === 1 ? 'Pegar clip' : `Pegar ${count} clips`" @close="answer(false)">
+  <Modal :title="ui.pasteAsk?.title ?? (count === 1 ? 'Pegar clip' : `Pegar ${count} clips`)" :icon="ui.pasteAsk?.icon ?? 'paste'" :width="480" @close="answer(false)">
     <div class="body" data-testid="paste-dialog">
-      <p>Se pegará con todas sus propiedades (transformación, audio, fundidos y fotogramas clave). ¿Dónde?</p>
+      <p>{{ ui.pasteAsk?.intro ?? 'Se pegará con todas sus propiedades (transformación, audio, fundidos y fotogramas clave). ¿Dónde?' }}</p>
       <div class="opts" role="radiogroup" aria-label="Dónde pegar">
         <button
           v-for="o in options"
@@ -58,16 +58,15 @@ function choose(o: { value: Where; disabled?: boolean }, confirm = false): void 
           <span class="txt"><strong>{{ o.title }}</strong><span class="dim">{{ o.text }}</span></span>
         </button>
       </div>
-      <footer>
-        <button class="btn" @click="answer(false)">Cancelar</button>
-        <button class="btn primary" data-testid="paste-confirm" @click="answer(true)">Pegar</button>
-      </footer>
     </div>
+    <template #footer>
+      <button class="btn" @click="answer(false)">Cancelar</button>
+      <button class="btn primary" data-testid="paste-confirm" @click="answer(true)">{{ ui.pasteAsk?.confirm ?? 'Pegar' }}</button>
+    </template>
   </Modal>
 </template>
 
 <style scoped>
-.body { width: 460px; font-size: 12px; }
 p { margin: 0 0 10px; }
 .opts { display: flex; flex-direction: column; gap: 6px; }
 .opt { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; padding: 8px 12px; background: var(--bg-panel-header); border: 1px solid var(--border-subtle); border-radius: 3px; cursor: pointer; color: var(--text); }
@@ -77,5 +76,4 @@ p { margin: 0 0 10px; }
 .ico { display: grid; place-items: center; width: 28px; flex: none; color: var(--text-dim); }
 .on .ico { color: var(--accent); }
 .txt { display: flex; flex-direction: column; gap: 2px; }
-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 </style>

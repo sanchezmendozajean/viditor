@@ -70,6 +70,7 @@ function runners(): Record<string, Runner> {
     'tool.razor': { run: () => (tl.tool = 'razor') },
     'tool.hand': { run: () => (tl.tool = 'hand') },
     'timeline.snap': { run: () => (tl.snap = !tl.snap) },
+    'view.guides': { run: () => void useAppPrefs().update({ smartGuides: !useAppPrefs().smartGuides }) },
     'marker.add': { run: () => tl.addMarker() },
     'range.in': { run: () => useExportStore().setIn(tl.playhead) },
     'range.out': { run: () => useExportStore().setOut(tl.playhead) },

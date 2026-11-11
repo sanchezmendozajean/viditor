@@ -39,7 +39,7 @@ export const useUiStore = defineStore('ui', {
     /** Medio que se previsualiza en el modal (doble clic en el panel Recursos) */
     previewMediaId: null as string | null,
     /** Pregunta dónde pegar los clips copiados */
-    pasteAsk: null as { resolve: (where: 'playhead' | 'selection' | 'end' | null) => void } | null,
+    pasteAsk: null as { resolve: (where: 'playhead' | 'selection' | 'end' | null) => void; title?: string; intro?: string; confirm?: string; icon?: 'paste' | 'text' | 'rectangle' } | null,
     deleteAsk: null as { name: string; resolve: (ok: boolean) => void } | null,
     tasks: [] as BackgroundTask[],
     /** Se incrementa cuando termina una miniatura para refrescar las <img>. */
@@ -74,9 +74,11 @@ export const useUiStore = defineStore('ui', {
         }
       })
     },
-    askPaste(): Promise<'playhead' | 'selection' | 'end' | null> {
+    /** Pregunta dónde colocar (pegar o insertar un texto/forma): mismas tres opciones que «Insertar» un clip. */
+    askPaste(opts: { title?: string; intro?: string; confirm?: string; icon?: 'paste' | 'text' | 'rectangle' } = {}): Promise<'playhead' | 'selection' | 'end' | null> {
       return new Promise((resolve) => {
         this.pasteAsk = {
+          ...opts,
           resolve: (w) => {
             this.pasteAsk = null
             resolve(w)

@@ -16,6 +16,7 @@ export const useAppPrefs = defineStore('prefs', {
       this.uiScale = p.uiScale
       this.shortcuts = p.shortcuts
       this.transitionsDir = p.transitionsDir
+      this.smartGuides = p.smartGuides
     },
     async update(partial: Partial<Prefs>): Promise<boolean> {
       // Los valores del store son proxies reactivos: no se pueden clonar por IPC, se envía una copia plana

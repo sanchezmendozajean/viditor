@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import type { NewProjectRequest, OpenedProject, RecentProject } from '@shared/ipc'
 import type { MediaItem, Project } from '@shared/project-schema'
+import { isGeneratedKind } from '@shared/generated'
 import { useUiStore } from './ui'
 import { useTimelineStore } from './timeline'
 
@@ -136,6 +137,12 @@ export const useProjectStore = defineStore('project', {
       const ui = useUiStore()
       const m = this.project?.media.find((x) => x.id === mediaId)
       if (!m) return
+      if (isGeneratedKind(m.kind)) {
+        // Texto/forma: no hay archivo; solo cambia el nombre visible
+        const name = newName.trim()
+        if (name && name !== m.name) this.mutate((p) => void (p.media.find((x) => x.id === mediaId)!.name = name))
+        return
+      }
       const oldFile = m.path.split('/').pop() ?? m.path
       const oldStem = oldFile.includes('.') ? oldFile.slice(0, oldFile.lastIndexOf('.')) : oldFile
       if (!newName.trim() || newName.trim() === oldStem || newName.trim() === oldFile) return
@@ -164,7 +171,7 @@ export const useProjectStore = defineStore('project', {
       const ui = useUiStore()
       const media = this.project?.media.find((m) => m.id === mediaId)
       if (!this.project || !media) return
-      if (deleteFile) {
+      if (deleteFile && !isGeneratedKind(media.kind)) {
         const r = await window.viditor.media.deleteFile(media.id, media.path)
         if (!r.ok) return ui.showError(`No se pudo eliminar el archivo: ${r.error}`)
       }
@@ -177,7 +184,7 @@ export const useProjectStore = defineStore('project', {
       this.missing = this.missing.filter((id) => id !== mediaId)
       useTimelineStore().reset()
       await this.save()
-      ui.showInfo(deleteFile ? 'Recurso eliminado del disco.' : 'Referencia quitada.')
+      ui.showInfo(isGeneratedKind(media.kind) ? 'Recurso eliminado.' : deleteFile ? 'Recurso eliminado del disco.' : 'Referencia quitada.')
     },
 
     async importWithDialog(): Promise<void> {

@@ -86,6 +86,7 @@ Esta tabla se genera desde el catálogo de comandos de la aplicación. Todos los
 
 | Atajo | Acción |
 |-------|--------|
+| — | Activar / desactivar las guías inteligentes del monitor |
 | — | Espacio de trabajo: Edición |
 | — | Espacio de trabajo: Transiciones |
 | — | Espacio de trabajo: Audio |

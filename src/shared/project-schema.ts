@@ -34,9 +34,12 @@ export const probeSchema = z.object({
 
 export const mediaSchema = z.object({
   id: z.string(),
-  path: z.string(),
-  storage: z.enum(['project', 'external']),
-  kind: z.enum(['video', 'audio', 'image']),
+  path: z.string().default(''),
+  storage: z.enum(['project', 'external']).default('project'),
+  /** `text` y `shape` son recursos generados: no tienen archivo; sus propiedades viven en cada clip (`clip.generator`). */
+  kind: z.enum(['video', 'audio', 'image', 'text', 'shape']),
+  /** Nombre visible de un recurso generado (los archivos usan su nombre de archivo). */
+  name: z.string().optional(),
   binId: z.string().nullable().default(null),
   probe: probeSchema.optional(),
   proxy: z.string().optional()
@@ -67,6 +70,54 @@ export const keyframeSchema = z.object({
   ease: z.enum(['linear', 'smooth', 'hold']).default('linear')
 })
 export type Keyframe = z.infer<typeof keyframeSchema>
+
+const stroke = z.object({ enabled: z.boolean().default(false), color: color.default('#000000'), width: z.number().min(0).default(4) })
+const shadow = z.object({
+  enabled: z.boolean().default(false),
+  color: color.default('#000000'),
+  opacity: z.number().min(0).max(1).default(0.6),
+  blur: z.number().min(0).default(8),
+  offsetX: z.number().default(4),
+  offsetY: z.number().default(4)
+})
+export const DEFAULT_STROKE = { enabled: false, color: '#000000', width: 4 }
+export const DEFAULT_SHADOW = { enabled: false, color: '#000000', opacity: 0.6, blur: 8, offsetX: 4, offsetY: 4 }
+
+/** Texto: se dibuja en un cuadro de `boxWidth × boxHeight` px del proyecto (con ajuste de línea y alineación). */
+export const textGeneratorSchema = z.object({
+  type: z.literal('text'),
+  text: z.string().default('Texto'),
+  fontFamily: z.string().default('Source Sans 3'),
+  fontSize: z.number().min(1).default(96),
+  bold: z.boolean().default(false),
+  italic: z.boolean().default(false),
+  align: z.enum(['left', 'center', 'right']).default('center'),
+  lineHeight: z.number().min(0.5).default(1.2),
+  color: color.default('#ffffff'),
+  stroke: stroke.default(DEFAULT_STROKE),
+  shadow: shadow.default(DEFAULT_SHADOW),
+  /** El cuadro se ajusta a los píxeles visibles del texto (y se recalcula al editarlo). Si es false, manda `boxWidth × boxHeight`. */
+  autoFit: z.boolean().default(false),
+  boxWidth: z.number().min(1).default(800),
+  boxHeight: z.number().min(1).default(160)
+})
+
+/** Rectángulo (con esquinas redondeadas opcionales) de `width × height` px del proyecto. */
+export const rectGeneratorSchema = z.object({
+  type: z.literal('rectangle'),
+  width: z.number().min(1).default(400),
+  height: z.number().min(1).default(240),
+  fillEnabled: z.boolean().default(true),
+  fill: color.default('#4f8cff'),
+  radius: z.number().min(0).default(0),
+  stroke: stroke.default(DEFAULT_STROKE),
+  shadow: shadow.default(DEFAULT_SHADOW)
+})
+
+export const generatorSchema = z.discriminatedUnion('type', [textGeneratorSchema, rectGeneratorSchema])
+export type Generator = z.infer<typeof generatorSchema>
+export type TextGenerator = z.infer<typeof textGeneratorSchema>
+export type RectGenerator = z.infer<typeof rectGeneratorSchema>
 
 export const clipSchema = z.object({
   id: z.string(),
@@ -116,7 +167,9 @@ export const clipSchema = z.object({
    */
   fade: z.object({ in: z.number().min(0).default(0), out: z.number().min(0).default(0) }).default({ in: 0, out: 0 }),
   /** Animación por propiedad (`x`, `y`, `scaleX`, `scaleY`, `rotation`, `opacity`, `volume`); ver `keyframes.ts` */
-  keyframes: z.record(z.string(), z.array(keyframeSchema)).default({})
+  keyframes: z.record(z.string(), z.array(keyframeSchema)).default({}),
+  /** Solo en clips de texto/forma: qué se dibuja. Posición, escala, rotación y opacidad usan `transform`. */
+  generator: generatorSchema.optional()
 })
 
 export const transitionSchema = z.object({

@@ -4,6 +4,7 @@ import { formatTimecode } from '@shared/timecode'
 import type { AudioMode } from '@shared/transition-model'
 import { Compositor, type RawFrame, type Source } from '@/engine/compositor'
 import { transitionHost, type Env } from '@/engine/transition-host'
+import { preloadFonts, rasterize } from '@/engine/layer-raster'
 import { YuvConverter } from './yuv'
 
 /** Capas de clip de un frame, incluidas las dos de cada transición. */
@@ -69,6 +70,10 @@ async function execute(job: ExportJobData): Promise<void> {
     names.set(ref, info.meta?.name ?? ref)
   }
 
+  // Texto: las fuentes deben estar cargadas antes del primer fotograma. Si se exporta a más resolución que el proyecto, las capas se dibujan con más detalle.
+  await preloadFonts(rp)
+  const layerScale = Math.max(1, size.width / rp.settings.width)
+
   const begun = await api.begin(jobId, modes)
   if (!begun.ok) throw new Error(begun.error)
 
@@ -104,6 +109,11 @@ async function execute(job: ExportJobData): Promise<void> {
     const sources = new Map<string, Source>()
     await Promise.all(
       clipLayers(frame).map(async (op) => {
+        if (op.generator) {
+          // Texto/forma: no hay archivo que decodificar; se dibuja con el mismo rasterizador que la vista previa
+          sources.set(op.clipId, rasterize(op.generator, layerScale))
+          return
+        }
         const r = await api.decode({ jobId, clipId: op.clipId, mediaId: op.mediaId, sourceTime: op.sourceTime, frame: n })
         if (!r.ok) throw new Error(r.error)
         sources.set(op.clipId, await toSource(op.mediaId, r.value))

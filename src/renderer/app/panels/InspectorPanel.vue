@@ -1,20 +1,28 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { useTimelineStore } from '@/stores/timeline'
 import Panel from '../components/Panel.vue'
 import ClipInspector from './ClipInspector.vue'
 import TransitionInspector from './TransitionInspector.vue'
+import ProjectSettings from './ProjectSettings.vue'
 
 const project = useProjectStore()
 const tl = useTimelineStore()
+
+const tab = ref('inspector')
+const tabs = [
+  { id: 'inspector', label: 'Inspector' },
+  { id: 'settings', label: 'Proyecto' }
+]
 
 const track = computed(() => project.project?.tracks.find((t) => t.id === tl.selectedTrackId))
 </script>
 
 <template>
-  <Panel title="Inspector" help="transforms">
-    <TransitionInspector v-if="project.project && tl.selectedTransition" />
+  <Panel title="Inspector" help="transforms" :tabs="tabs" :model-value="tab" @update:model-value="tab = $event">
+    <ProjectSettings v-if="tab === 'settings'" />
+    <TransitionInspector v-else-if="project.project && tl.selectedTransition" />
     <ClipInspector v-else-if="project.project && tl.selection.length > 0" />
     <div v-else-if="project.project && track" class="info" data-testid="inspector-track">
       <h3>Pista: {{ track.name }}</h3>
@@ -25,26 +33,7 @@ const track = computed(() => project.project?.tracks.find((t) => t.id === tl.sel
       </dl>
     </div>
     <div v-else-if="project.project" class="info" data-testid="inspector">
-      <h3>Ajustes del proyecto</h3>
-      <dl>
-        <dt>Nombre</dt><dd>{{ project.project.name }}</dd>
-        <dt>Resolución</dt><dd class="mono">{{ project.project.settings.width }} × {{ project.project.settings.height }}</dd>
-        <dt>Fotogramas</dt><dd class="mono">{{ +(project.project.settings.fps.num / project.project.settings.fps.den).toFixed(3) }} fps</dd>
-        <dt>Audio</dt><dd class="mono">{{ project.project.settings.sampleRate }} Hz</dd>
-        <dt>Fondo</dt><dd><span class="sw" :style="{ background: project.project.settings.background }" /> {{ project.project.settings.background }}</dd>
-        <dt>Importación</dt>
-        <dd>
-          <select
-            :value="project.project.settings.importMode"
-            @change="project.mutate((p) => (p.settings.importMode = ($event.target as HTMLSelectElement).value as typeof p.settings.importMode))"
-          >
-            <option value="ask">Preguntar siempre</option>
-            <option value="reference">Dejar en su ubicación</option>
-            <option value="copy">Copiar al proyecto</option>
-            <option value="move">Mover al proyecto</option>
-          </select>
-        </dd>
-      </dl>
+      <p class="dim">Selecciona un clip, una pista o una transición para ver sus propiedades.</p>
     </div>
   </Panel>
 </template>

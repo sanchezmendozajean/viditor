@@ -82,6 +82,7 @@ export const COMMANDS: readonly CommandMeta[] = [
   { id: 'key.next', label: 'Ir al fotograma clave siguiente', category: 'Fotogramas clave' },
 
   // Ver
+  { id: 'view.guides', label: 'Activar / desactivar las guías inteligentes del monitor', category: 'Ver' },
   { id: 'view.edit', label: 'Espacio de trabajo: Edición', category: 'Ver' },
   { id: 'view.transitions', label: 'Espacio de trabajo: Transiciones', category: 'Ver' },
   { id: 'view.audio', label: 'Espacio de trabajo: Audio', category: 'Ver' },

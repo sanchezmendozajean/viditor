@@ -3,7 +3,8 @@
  * Funciones puras: la vista previa (WebGL2) y la exportación usan EXACTAMENTE las mismas.
  * Orden de aplicación: crop → ajuste (fit) → escala → volteo → rotación (sobre el anclaje) → traslación → opacidad.
  */
-import type { Clip, MediaItem, Project, ProjectSettings, Track } from './project-schema'
+import type { Clip, Generator, MediaItem, Project, ProjectSettings, Track } from './project-schema'
+import { contentSize, effectPad } from './generated'
 import { resolveClip, valueAt } from './keyframes'
 import { clipEnd } from './timeline-ops'
 import { transitionAt, transitionAudioFactor, transitionTiming, type AudioMode } from './transition-model'
@@ -21,6 +22,8 @@ export interface DrawOp {
   /** Rectángulo de textura [u0, v0, u1, v1] con crop y volteo ya aplicados (u0 > u1 = volteo horizontal) */
   uv: [number, number, number, number]
   opacity: number
+  /** Solo texto/forma: lo que hay que dibujar en el lienzo de la capa (no hay archivo fuente) */
+  generator?: Generator
 }
 
 /**
@@ -59,7 +62,9 @@ export const drawOps = (f: Frame): DrawOp[] => f.ops.filter((o): o is DrawOp => 
 const RAD = Math.PI / 180
 
 /** Tamaño del fuente tal como se ve (el metadato de rotación intercambia ancho y alto). */
-export function sourceSize(m: MediaItem | undefined, s: ProjectSettings): [number, number] {
+export function sourceSize(m: MediaItem | undefined, s: ProjectSettings, clip?: Clip): [number, number] {
+  // Texto/forma: la caja es el contenido; el margen de contorno y sombra se dibuja hacia fuera (ver `drawOpFor`)
+  if (clip?.generator) return contentSize(clip.generator)
   const w = m?.probe?.width ?? s.width
   const h = m?.probe?.height ?? s.height
   const rot = Math.abs(m?.probe?.rotation ?? 0) % 180
@@ -82,9 +87,10 @@ export interface Geometry {
 
 export function clipGeometry(s: ProjectSettings, clip: Clip, m: MediaItem | undefined): Geometry {
   const t = clip.transform
-  const [sw, sh] = sourceSize(m, s)
-  const cw = Math.max(1, sw - t.crop.left - t.crop.right)
-  const ch = Math.max(1, sh - t.crop.top - t.crop.bottom)
+  const [sw, sh] = sourceSize(m, s, clip)
+  const crop = clip.generator ? { left: 0, top: 0, right: 0, bottom: 0 } : t.crop // el recorte no aplica a texto/forma
+  const cw = Math.max(1, sw - crop.left - crop.right)
+  const ch = Math.max(1, sh - crop.top - crop.bottom)
   let fx = 1
   let fy = 1
   switch (t.fit) {
@@ -102,6 +108,16 @@ export function clipGeometry(s: ProjectSettings, clip: Clip, m: MediaItem | unde
       break
   }
   return { sw, sh, cw, ch, fx, fy, bw: cw * fx * t.scaleX, bh: ch * fy * t.scaleY }
+}
+
+/**
+ * Compensa x/y para que el punto de anclaje no se mueva en pantalla cuando el cuadro del clip cambia de tamaño
+ * (`bw × bh` antes de rotar). La posición guardada es el centro del cuadro: sin esto, cambiar el tamaño siempre
+ * crece desde el centro aunque el anclaje esté en otro sitio. La rotación no influye (gira sobre el anclaje).
+ */
+export function keepAnchorOnResize(t: Clip['transform'], from: { bw: number; bh: number }, to: { bw: number; bh: number }): void {
+  t.x += (t.anchorX - 0.5) * (from.bw - to.bw)
+  t.y += (t.anchorY - 0.5) * (from.bh - to.bh)
 }
 
 /** Posición de la esquina/centro (u,v) del cuadro del clip en píxeles del proyecto. */
@@ -168,17 +184,28 @@ export function activeClipsAt(p: Project, t: number): { clip: Clip; track: Track
 function drawOpFor(p: Project, source: Clip, media: MediaItem, t: number): DrawOp {
   const clip = resolveClip(source, t)
   const g = clipGeometry(p.settings, clip, media)
-  const c = clip.transform.crop
+  const c = clip.generator ? { left: 0, top: 0, right: 0, bottom: 0 } : clip.transform.crop
   const u0 = c.left / g.sw
   const v0 = c.top / g.sh
   const u1 = 1 - c.right / g.sw
   const v1 = 1 - c.bottom / g.sh
+  let matrix = clipMatrix(p.settings, clip, g)
+  if (clip.generator) {
+    // El lienzo de un texto/forma lleva un margen para contorno y sombra: se dibuja ampliando el cuadro hacia fuera
+    // (la caja de selección y las medidas siguen siendo las del contenido).
+    const pad = effectPad(clip.generator)
+    const ex = pad / g.cw
+    const ey = pad / g.ch
+    const [a, b, c2, d, e, f] = matrix
+    matrix = [a * (1 + 2 * ex), b * (1 + 2 * ex), c2 * (1 + 2 * ey), d * (1 + 2 * ey), e - ex * a - ey * c2, f - ex * b - ey * d]
+  }
   return {
     clipId: clip.id,
     mediaId: media.id,
-    kind: media.kind === 'image' ? 'image' : 'video',
+    kind: media.kind === 'video' ? 'video' : 'image',
     sourceTime: clip.in + (t - clip.start) * clip.speed,
-    matrix: clipMatrix(p.settings, clip, g),
+    generator: clip.generator,
+    matrix,
     uv: [clip.transform.flipH ? u1 : u0, clip.transform.flipV ? v1 : v0, clip.transform.flipH ? u0 : u1, clip.transform.flipV ? v0 : v1],
     opacity: clip.transform.opacity * clipFadeAt(clip, t)
   }

@@ -6,6 +6,7 @@ import { useTimelineStore } from '@/stores/timeline'
 import { QUALITY_SCALE, useTimelinePlayback, type Quality } from '@/stores/playback'
 import { AudioGraph } from './audio'
 import { Compositor } from './compositor'
+import { rasterize, setFontLoadedHandler } from './layer-raster'
 import { isReady, seekTo, SourceProvider, type SourceEntry } from './sources'
 import { transitionHost, type Env } from './transition-host'
 import { useTransitionsStore } from '@/stores/transitions'
@@ -61,6 +62,7 @@ export class Engine {
       }
     }
     this.sources.onDispose = (e) => this.audio.detach(e)
+    setFontLoadedHandler(() => this.requestRender())
   }
 
   private get project(): Project | null {
@@ -122,6 +124,7 @@ export class Engine {
   }
 
   private entryFor(clip: Clip): SourceEntry | null {
+    if (clip.generator) return null // texto/forma: se dibuja en un canvas, no hay elemento multimedia
     const m = this.project?.media.find((x) => x.id === clip.mediaId)
     return m ? this.sources.acquire(clip.id, m) : null
   }
@@ -133,6 +136,7 @@ export class Engine {
     comp.draw(
       frame,
       (op) => {
+        if (op.generator) return rasterize(op.generator)
         const e = this.sources.all.find((x) => x.clipId === op.clipId)
         return e && isReady(e.el) ? e.el : null
       },
@@ -223,6 +227,19 @@ export class Engine {
     this.sources.pauseAll()
     if (this.project) tl.setPlayhead(tl.playhead)
     this.requestRender()
+  }
+
+  /**
+   * Mueve el cabezal a `t`. Si se está reproduciendo, la reproducción continúa desde ese punto
+   * (se reancla el reloj y se re-sincronizan los medios); si está en pausa, solo se renderiza el frame.
+   */
+  seek(t: number): void {
+    const tl = useTimelineStore()
+    tl.setPlayhead(t)
+    if (!useTimelinePlayback().playing) return
+    this.t0 = tl.playhead
+    this.clock0 = performance.now()
+    this.sources.pauseAll()
   }
 
   toggle(): void {

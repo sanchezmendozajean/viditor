@@ -34,6 +34,16 @@ Visual: rectángulo redondeado (2 px) con color por tipo (video violeta-azulado,
 - Los clips **no pueden solaparse** en una misma pista, excepto en una transición. Al soltar encima de otro clip: modo **sobrescribir** (por defecto) o **insertar** (manteniendo Ctrl), que desplaza lo posterior.
 - Todo cambio pasa por un **sistema de comandos** con Deshacer/Rehacer ilimitado (Ctrl+Z / Ctrl+Shift+Z, Ctrl+Y). Arrastres continuos = un solo comando.
 
+## Texto y formas
+
+Panel Recursos › botón **+** › **Texto** / **Rectángulo**. Abre el mismo modal que «Insertar» un clip (en el cabezal, al final del elemento seleccionado, al final del contenido) y crea un recurso (`media.kind` = `text` | `shape`, sin archivo) con un clip de **1 s**.
+
+- Las propiedades viven en el clip (`clip.generator`), no en el recurso: cada clip es editable por separado y copiar/pegar o dividir las conserva.
+- Son una **capa superpuesta**: nunca sobrescriben otro clip. Van a la pista de video seleccionada si está libre en ese rango, si no a la primera libre de arriba abajo, y si no hay ninguna se crea una pista de video encima.
+- Se dibujan en un canvas 2D (`layer-raster.ts`) que se entrega al mismo compositor que un fotograma de video; la exportación usa el mismo rasterizador. El tamaño del lienzo sale de `generatorSize` (compartido): cuadro del texto/forma + margen para contorno y sombra. Posición, escala, rotación y opacidad usan el `transform` normal.
+- Inspector: texto, fuente (Source Sans 3 y JetBrains Mono van empaquetadas; las genéricas del sistema dependen del equipo), tamaño, negrita/cursiva, alineación, interlineado, color, cuadro (ancho/alto y «ajustar al texto»), contorno y sombra. En el rectángulo: tamaño, relleno, esquinas, contorno y sombra.
+- **Pegar** (Ctrl+V) respeta la pista seleccionada: los clips del mismo tipo que la pista seleccionada se pegan en ella (conservando la separación entre pistas si se copiaron de varias).
+
 ## Transiciones en la línea de tiempo
 
 Modelo de **solapamiento** (exactamente como lo concibió el autor): una transición de duración `d` entre el clip A (sale) y el clip B (entra) consiste en el **último `d` del clip A** superpuesto con el **primer `d` del clip B**.

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { Clip, MediaItem, Track } from '@shared/project-schema'
 import { keyTimes, timelineTimeOf } from '@shared/keyframes'
 import { clipDuration } from '@shared/timeline-ops'
+import { isGeneratedKind } from '@shared/generated'
 import { useUiStore } from '@/stores/ui'
 import { useWaveStore } from '@/stores/waves'
 import ClipWave from './ClipWave.vue'
@@ -28,7 +29,8 @@ const left = computed(() => (props.start ?? props.clip.start) * props.zoom)
 const width = computed(() => Math.max(2, clipDuration(props.clip) * props.zoom))
 const kindClass = computed(() => {
   if (props.track.kind === 'audio') return 'audio'
-  return props.media?.kind === 'image' ? 'image' : 'video'
+  const k = props.media?.kind
+  return k === 'image' || k === 'text' || k === 'shape' ? k : 'video'
 })
 // Rombos de los fotogramas clave dentro del clip (posición relativa al inicio del clip)
 const keyMarks = computed(() =>
@@ -41,7 +43,7 @@ const fadeInW = computed(() => Math.min(width.value, (props.clip.fade?.in ?? 0) 
 const fadeOutW = computed(() => Math.min(width.value, (props.clip.fade?.out ?? 0) * props.zoom))
 const wave = computed(() => (props.media ? waves.get(props.media.id) : null))
 const thumb = computed(() => {
-  if (props.track.kind !== 'video' || !props.media || props.media.kind === 'audio') return undefined
+  if (props.track.kind !== 'video' || !props.media || props.media.kind === 'audio' || isGeneratedKind(props.media.kind)) return undefined
   return `url(${window.viditor.media.thumbnailUrl(props.media.id)}?v=${ui.thumbVersion[props.media.id] ?? 0})`
 })
 const thumbH = computed(() => Math.max(10, props.height - 14))
@@ -95,6 +97,8 @@ function onMove(e: PointerEvent): void {
 .clip { position: absolute; top: 2px; border-radius: 2px; overflow: hidden; background: var(--clip-video); border: 1px solid rgba(0, 0, 0, 0.45); cursor: default; }
 .clip.audio { background: var(--clip-audio); }
 .clip.image { background: var(--clip-image); }
+.clip.text { background: var(--clip-text); }
+.clip.shape { background: var(--clip-shape); }
 .clip.selected { border-color: #fff; filter: brightness(1.12); z-index: 3; }
 .clip.disabled { opacity: 0.4; background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(0, 0, 0, 0.35) 4px 8px); }
 .clip.dragging { opacity: 0.75; z-index: 4; outline: 1px dashed #fff; }

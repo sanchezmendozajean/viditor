@@ -61,8 +61,16 @@ import bookOpen from 'lucide-static/icons/book-open.svg?raw'
 import keyboard from 'lucide-static/icons/keyboard.svg?raw'
 import paste from 'lucide-static/icons/clipboard-paste.svg?raw'
 import repeat from 'lucide-static/icons/repeat.svg?raw'
+import textIcon from 'lucide-static/icons/type.svg?raw'
+import ruler from 'lucide-static/icons/ruler.svg?raw'
+import alignLeft from 'lucide-static/icons/align-left.svg?raw'
+import alignCenter from 'lucide-static/icons/align-center.svg?raw'
+import alignRight from 'lucide-static/icons/align-right.svg?raw'
+import bold from 'lucide-static/icons/bold.svg?raw'
+import italic from 'lucide-static/icons/italic.svg?raw'
+import rectangle from 'lucide-static/icons/rectangle-horizontal.svg?raw'
 
-const icons = { folder, 'folder-open': folderOpen, 'folder-plus': folderPlus, plus, x, minus, square, copy, search, link, pencil, trash, unlink, alert, film, music, image, grid, list, help, save, download, video, eye, eyeOff, lock, unlock, vol, volOff, grip, pointer, razor, hand, magnet, right, down, flag, play, pause, skipBack, skipFwd, left, rightArrow, repeat, locate, locateFixed, paste, filePlus, logOut, undo, redo, boxSelect, settings, arrowStart, arrowEnd, reset, maximize, sparkles, upload, bookOpen, keyboard }
+const icons = { ruler, text: textIcon, rectangle, alignLeft, alignCenter, alignRight, bold, italic, folder, 'folder-open': folderOpen, 'folder-plus': folderPlus, plus, x, minus, square, copy, search, link, pencil, trash, unlink, alert, film, music, image, grid, list, help, save, download, video, eye, eyeOff, lock, unlock, vol, volOff, grip, pointer, razor, hand, magnet, right, down, flag, play, pause, skipBack, skipFwd, left, rightArrow, repeat, locate, locateFixed, paste, filePlus, logOut, undo, redo, boxSelect, settings, arrowStart, arrowEnd, reset, maximize, sparkles, upload, bookOpen, keyboard }
 export type IconName = keyof typeof icons
 
 const props = defineProps<{ name: IconName; size?: number }>()

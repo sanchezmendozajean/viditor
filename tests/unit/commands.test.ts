@@ -94,7 +94,7 @@ describe('catálogo de comandos', () => {
 
 describe('preferencias', () => {
   it('aplica valores por defecto y rechaza escalas fuera de rango', () => {
-    expect(prefsSchema.parse({})).toEqual({ uiScale: 100, shortcuts: {}, transitionsDir: null })
+    expect(prefsSchema.parse({})).toEqual({ uiScale: 100, shortcuts: {}, transitionsDir: null, smartGuides: true })
     expect(prefsSchema.safeParse({ uiScale: 200 }).success).toBe(false)
     expect(prefsSchema.safeParse({ uiScale: 89 }).success).toBe(false)
     expect(prefsSchema.safeParse({ shortcuts: { 'clip.split': ['a', 'b', 'c', 'd', 'e'] } }).success).toBe(false)

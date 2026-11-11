@@ -4,6 +4,7 @@ import { clipGainWithTransitions, trackGain } from '@shared/render-model'
 import type { AudioMode } from '@shared/transition-model'
 import type { Clip, MediaItem, Project } from '@shared/project-schema'
 import { clipEnd } from '@shared/timeline-ops'
+import { isGeneratedKind } from '@shared/generated'
 import { resolveBinary } from './paths'
 
 export const MIX_SAMPLE_RATE = 48000
@@ -31,7 +32,7 @@ function audibleClips(p: Project, start: number, end: number): { clip: Clip; med
     if (!clip.enabled || clip.audio.muted) continue
     if (clipEnd(clip) <= start || clip.start >= end) continue
     const media = p.media.find((m) => m.id === clip.mediaId)
-    if (!media || media.kind === 'image') continue
+    if (!media || media.kind === 'image' || isGeneratedKind(media.kind)) continue
     if (media.kind === 'video' && !media.probe?.hasAudio) continue
     const track = p.tracks.find((t) => t.id === clip.trackId)
     if (!track || trackGain(p, track) === 0) continue

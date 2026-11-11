@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { clipGeometry, clipMatrix, solvePosition, applyMatrix, worldCenter, activeClipsAt } from '@shared/render-model'
+import { buildFrame, clipGeometry, clipMatrix, solvePosition, applyMatrix, worldCenter, activeClipsAt, type DrawOp, type Matrix } from '@shared/render-model'
 import { formatTimecode, parseTimecode } from '@shared/timecode'
 import { engine } from '@/engine/engine'
 import { useProjectStore } from '@/stores/project'
 import { useTimelineStore } from '@/stores/timeline'
+import { useAppPrefs } from '@/stores/prefs'
 import { useTimelinePlayback, type Quality } from '@/stores/playback'
 import Panel from '../components/Panel.vue'
 import Icon from '../components/Icon.vue'
@@ -12,6 +13,7 @@ import Icon from '../components/Icon.vue'
 const project = useProjectStore()
 const tl = useTimelineStore()
 const pb = useTimelinePlayback()
+const prefs = useAppPrefs()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 const stage = ref<SVGSVGElement | null>(null)
@@ -120,6 +122,78 @@ function toProject(e: { clientX: number; clientY: number }): [number, number] {
   return [((e.clientX - r.left) / r.width) * W.value, ((e.clientY - r.top) / r.height) * H.value]
 }
 
+// ───────── Selección desde el monitor ─────────
+
+/** ¿El punto (x, y) del proyecto cae dentro del cuadro (con su rotación) que describe la matriz? */
+function insideMatrix(m: Matrix, x: number, y: number): boolean {
+  const det = m[0] * m[3] - m[1] * m[2]
+  if (Math.abs(det) < 1e-9) return false
+  const dx = x - m[4]
+  const dy = y - m[5]
+  const u = (m[3] * dx - m[2] * dy) / det
+  const v = (-m[1] * dx + m[0] * dy) / det
+  return u >= 0 && u <= 1 && v >= 0 && v <= 1
+}
+
+/**
+ * Clip más cercano al frente bajo el punto, entre los que se VEN en el cabezal (pista visible, clip habilitado y dentro
+ * de su rango, opacidad y desvanecimiento > 0). Usa el mismo `buildFrame` que el render: lo que no se dibuja, no se selecciona.
+ */
+function layerAt(x: number, y: number): DrawOp | null {
+  const p = project.project
+  if (!p) return null
+  const layers: DrawOp[] = []
+  for (const op of buildFrame(p, tl.playhead).ops) {
+    if (op.kind === 'transition') layers.push(...[op.leave, op.enter].filter((l): l is DrawOp => l !== null))
+    else layers.push(op)
+  }
+  for (let i = layers.length - 1; i >= 0; i--) {
+    const l = layers[i] as DrawOp
+    if (l.opacity > 0.01 && insideMatrix(l.matrix, x, y)) return l
+  }
+  return null
+}
+const clipAt = (x: number, y: number): string | null => layerAt(x, y)?.clipId ?? null
+
+// Resaltado al pasar el mouse: contorno del clip que se seleccionaría con un clic (no del ya seleccionado)
+const hoverPoly = ref('')
+function onStageMove(e: PointerEvent): void {
+  if (e.buttons) return hideHover() // durante un arrastre no se resalta
+  const [x, y] = toProject(e)
+  const l = layerAt(x, y)
+  if (!l || tl.selection.includes(l.clipId)) return hideHover()
+  const m = l.matrix
+  hoverPoly.value = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([u, v]) => applyMatrix(m, u as number, v as number).join(',')).join(' ')
+}
+function hideHover(): void {
+  if (hoverPoly.value) hoverPoly.value = ''
+}
+watch(() => [tl.playhead, tl.selection], hideHover, { deep: true })
+
+/** Clic en el monitor: selecciona el clip visible bajo el cursor (y lo arrastra si se mueve); en vacío, quita la selección. */
+function onStageDown(e: PointerEvent): void {
+  if (e.button !== 0) return
+  const el = e.target as Element
+  if (el.closest('.handle, .anchor')) return // tiradores y anclaje del clip seleccionado
+  const [x, y] = toProject(e)
+  const id = clipAt(x, y)
+  if (!id) {
+    if (el.classList.contains('box')) return // recuadro del clip seleccionado (p. ej. con opacidad 0): se puede arrastrar igual
+    if (!e.ctrlKey && !e.metaKey && !e.shiftKey) tl.select([])
+    return
+  }
+  if (tl.selection.includes(id) && !e.ctrlKey && !e.metaKey) return // ya seleccionado: su recuadro gestiona el arrastre
+  e.preventDefault()
+  e.stopPropagation()
+  const clip = project.project?.clips.find((c) => c.id === id)
+  if (e.ctrlKey || e.metaKey) return tl.toggleSelect(id)
+  if (e.shiftKey) tl.select([id], true)
+  else tl.select([id])
+  if (clip) tl.selectedTrackId = clip.trackId
+  // El recuadro del clip recién seleccionado aparece en el siguiente ciclo: entonces se puede arrastrar de inmediato
+  void nextTick(() => startMove(e))
+}
+
 /** Registra el gesto: mutaciones en vivo + un solo comando al soltar. */
 function gesture(e: PointerEvent, label: string, onMove: (p: [number, number], ev: PointerEvent) => void): void {
   e.preventDefault()
@@ -162,7 +236,7 @@ function startMove(e: PointerEvent): void {
     const snap = 6 * k.value
     const xs: number[] = []
     const ys: number[] = []
-    if (!ev.altKey) {
+    if (prefs.smartGuides && !ev.altKey) {
       const sx = snapAxis(ex, dx, [0, W.value / 2, W.value], snap)
       const sy = snapAxis(ey, dy, [0, H.value / 2, H.value], snap)
       dx = sx.d
@@ -190,8 +264,92 @@ function startScale(e: PointerEvent, hu: number, hv: number): void {
   const C = worldCenter(m)
   const sx0 = tr.scaleX
   const sy0 = tr.scaleY
+  const x0 = tr.x
+  const y0 = tr.y
   const corner = hu !== 0 && hv !== 0
+  // El punto de anclaje queda fijo: la distancia del tirador al anclaje (no al centro) fija el nuevo tamaño.
+  // Si el tirador arrastrado está sobre el propio anclaje (en ese eje no hay referencia), se escala desde el centro.
+  const P = applyMatrix(m, tr.anchorX, tr.anchorY)
+  const offU = (hu + 1) / 2 - tr.anchorX
+  const offV = (hv + 1) / 2 - tr.anchorY
+  const degX = hu !== 0 && Math.abs(offU) < 0.02
+  const degY = hv !== 0 && Math.abs(offV) < 0.02
+  const aboutAnchor = corner ? !(degX && degY) : hu !== 0 ? !degX : !degY
+  const axisAligned = Math.abs(Math.sin(th)) < 1e-6 // con otros ángulos el borde no es horizontal/vertical: sin imán
+  const cosT = Math.cos(th)
+  /**
+   * Imanta el borde que se arrastra a los bordes y al centro del lienzo (guías inteligentes).
+   * `O` es el punto fijo y `ox/oy` la posición del tirador respecto a él, en unidades del cuadro (por factor de escala).
+   */
+  const snapScale = (fx: number, fy: number, O: [number, number], ox: number, oy: number, free: boolean, ev: PointerEvent): [number, number] => {
+    guides.value = { xs: [], ys: [] }
+    if (!prefs.smartGuides || ev.altKey || !axisAligned) return [fx, fy]
+    const thr = 6 * k.value
+    const useX = hu !== 0 && Math.abs(ox) > 1e-6
+    const useY = hv !== 0 && Math.abs(oy) > 1e-6
+    const cands: { axis: 'x' | 'y'; f: number; line: number; err: number }[] = []
+    if (useX) for (const tg of [0, W.value / 2, W.value]) {
+      const f = (tg - O[0]) / (cosT * ox * g.bw)
+      const err = Math.abs((f - fx) * ox * g.bw)
+      if (f >= 0.01 && err < thr) cands.push({ axis: 'x', f, line: tg, err })
+    }
+    if (useY) for (const tg of [0, H.value / 2, H.value]) {
+      const f = (tg - O[1]) / (cosT * oy * g.bh)
+      const err = Math.abs((f - fy) * oy * g.bh)
+      if (f >= 0.01 && err < thr) cands.push({ axis: 'y', f, line: tg, err })
+    }
+    const out: [number, number] = [fx, fy]
+    if (!free) {
+      // Proporción bloqueada: un solo factor para ambos ejes; gana la guía más cercana
+      const best = cands.sort((a, b) => a.err - b.err)[0]
+      if (best) {
+        out[0] = out[1] = best.f
+        guides.value = best.axis === 'x' ? { xs: [best.line], ys: [] } : { xs: [], ys: [best.line] }
+      }
+      return out
+    }
+    const bx = cands.filter((c) => c.axis === 'x').sort((a, b) => a.err - b.err)[0]
+    const by = cands.filter((c) => c.axis === 'y').sort((a, b) => a.err - b.err)[0]
+    if (bx) out[0] = bx.f
+    if (by) out[1] = by.f
+    guides.value = { xs: bx ? [bx.line] : [], ys: by ? [by.line] : [] }
+    return out
+  }
   gesture(e, 'Escalar clip', (p, ev) => {
+    if (aboutAnchor) {
+      const rx = p[0] - P[0]
+      const ry = p[1] - P[1]
+      const lx = rx * ux[0] + ry * ux[1]
+      const ly = rx * vx[0] + ry * vx[1]
+      const free = ev.shiftKey || !tr.lockAspect
+      let fx = 1
+      let fy = 1
+      if (corner && !free) {
+        const h0 = offU * g.bw
+        const h1 = offV * g.bh
+        fx = fy = (lx * h0 + ly * h1) / (h0 * h0 + h1 * h1)
+      } else if (corner) {
+        fx = degX ? 1 : lx / (offU * g.bw)
+        fy = degY ? 1 : ly / (offV * g.bh)
+      } else if (hu !== 0) {
+        fx = lx / (offU * g.bw)
+        fy = tr.lockAspect && !ev.shiftKey ? fx : 1
+      } else {
+        fy = ly / (offV * g.bh)
+        fx = tr.lockAspect && !ev.shiftKey ? fy : 1
+      }
+      fx = Math.max(0.01, fx)
+      fy = Math.max(0.01, fy)
+      ;[fx, fy] = snapScale(fx, fy, P, offU, offV, free, ev)
+      tl.liveSelected((c) => {
+        c.transform.scaleX = sx0 * fx
+        c.transform.scaleY = sy0 * fy
+        // El anclaje no se mueve: x/y compensan el cambio de tamaño del cuadro
+        c.transform.x = x0 + (tr.anchorX - 0.5) * (g.bw - g.bw * fx)
+        c.transform.y = y0 + (tr.anchorY - 0.5) * (g.bh - g.bh * fy)
+      })
+      return
+    }
     const rel: [number, number] = [p[0] - C[0], p[1] - C[1]]
     const lx = rel[0] * ux[0] + rel[1] * ux[1]
     const ly = rel[0] * vx[0] + rel[1] * vx[1]
@@ -214,6 +372,7 @@ function startScale(e: PointerEvent, hu: number, hv: number): void {
     }
     fx = Math.max(0.01, fx)
     fy = Math.max(0.01, fy)
+    ;[fx, fy] = snapScale(fx, fy, C, hu / 2, hv / 2, ev.shiftKey || !tr.lockAspect, ev)
     const bw = g.bw * fx
     const bh = g.bh * fy
     const pos = solvePosition(s, C, { bw, bh }, tr.rotation, { x: tr.anchorX, y: tr.anchorY })
@@ -315,7 +474,8 @@ const cursorFor =(hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (hu
       <div class="stage">
         <div class="frame" :style="{ '--ratio': ratio, '--zoom': viewZoom / 100 }" data-testid="monitor-frame">
           <canvas ref="canvas" class="gl" data-testid="monitor-canvas" />
-          <svg ref="stage" class="overlay" :viewBox="`0 0 ${W} ${H}`" preserveAspectRatio="none" @pointerdown.self="tl.select([])">
+          <svg ref="stage" class="overlay" :viewBox="`0 0 ${W} ${H}`" preserveAspectRatio="none" @pointerdown.capture="onStageDown" @pointermove="onStageMove" @pointerleave="hideHover">
+            <polygon v-if="hoverPoly" :points="hoverPoly" class="hover-box" data-testid="hover-box" />
             <template v-if="target && corners">
               <line v-for="gx in guides.xs" :key="'x' + gx" :x1="gx" y1="0" :x2="gx" :y2="H" class="guide" />
               <line v-for="gy in guides.ys" :key="'y' + gy" x1="0" :y1="gy" :x2="W" :y2="gy" class="guide" />
@@ -363,6 +523,7 @@ const cursorFor =(hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (hu
         </div>
         <div class="right">
           <button class="zoom mono" :title="'Zoom de la vista previa (rueda del mouse). Clic: 100 %'" data-testid="view-zoom" @click="viewZoom = 100"><Icon name="search" :size="12" /> {{ viewZoom }} %</button>
+          <button class="icon-btn" :class="{ on: prefs.smartGuides }" title="Guías inteligentes: imantar al mover y redimensionar a los bordes y al centro (Alt las desactiva mientras arrastras)" data-testid="smart-guides" @click="prefs.update({ smartGuides: !prefs.smartGuides })"><Icon name="ruler" :size="14" /></button>
           <select :value="pb.quality" title="Calidad de la vista previa" data-testid="quality" @change="engine.setQuality(($event.target as HTMLSelectElement).value as Quality)">
             <option v-for="q in qualities" :key="q.v" :value="q.v">{{ q.label }}</option>
           </select>
@@ -381,6 +542,7 @@ const cursorFor =(hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (hu
 .frame { position: relative; width: calc(min(94cqw, calc(94cqh * var(--ratio))) * var(--zoom, 1)); aspect-ratio: var(--ratio); outline: 1px solid var(--border-subtle); background: #000; }
 .gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.hover-box { fill: color-mix(in srgb, var(--accent) 12%, transparent); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 .box { fill: transparent; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: move; }
 .handle { fill: #fff; stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .handle.round { fill: var(--accent); stroke: #fff; }
@@ -398,7 +560,7 @@ const cursorFor =(hu: number, hv: number): string => (hu !== 0 && hv !== 0 ? (hu
 .icon-btn.on { color: var(--accent); }
 .right { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .right select { padding: 1px 4px; font-size: 10.5px; }
-.zoom { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 1px 4px; font-size: 10.5px; color: var(--text-dim); cursor: pointer; }
+.zoom { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 1px 4px; font-size: 10.5px; color: var(--text-dim); cursor: pointer; white-space: nowrap; flex: none; }
 .zoom:hover { color: var(--text); }
 .master { width: 70px; accent-color: var(--accent); }
 .dur { min-width: 72px; text-align: right; }
