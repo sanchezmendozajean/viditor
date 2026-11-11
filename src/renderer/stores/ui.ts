@@ -40,7 +40,7 @@ export const useUiStore = defineStore('ui', {
     previewMediaId: null as string | null,
     /** Pregunta dónde pegar los clips copiados */
     pasteAsk: null as { resolve: (where: 'playhead' | 'selection' | 'end' | null) => void; title?: string; intro?: string; confirm?: string; icon?: 'paste' | 'text' | 'rectangle' } | null,
-    deleteAsk: null as { name: string; resolve: (ok: boolean) => void } | null,
+    deleteAsk: null as { files: string[]; others: string[]; resolve: (ok: boolean) => void } | null,
     tasks: [] as BackgroundTask[],
     /** Se incrementa cuando termina una miniatura para refrescar las <img>. */
     thumbVersion: {} as Record<string, number>,
@@ -86,10 +86,12 @@ export const useUiStore = defineStore('ui', {
         }
       })
     },
-    askDeleteMedia(name: string): Promise<boolean> {
+    /** `files`: archivos del proyecto que se borrarán del disco; `others`: referencias externas, textos y formas que solo se quitan. */
+    askDeleteMedia(files: string[], others: string[] = []): Promise<boolean> {
       return new Promise((resolve) => {
         this.deleteAsk = {
-          name,
+          files,
+          others,
           resolve: (ok) => {
             this.deleteAsk = null
             resolve(ok)

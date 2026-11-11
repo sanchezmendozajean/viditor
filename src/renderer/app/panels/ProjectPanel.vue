@@ -109,6 +109,13 @@ function commitRename(): void {
 }
 function onKey(e: KeyboardEvent): void {
   if (renaming.value || (e.target as HTMLElement).tagName === 'INPUT') return
+  if (e.key === 'Delete' && selected.value.length) {
+    // Supr con recursos seleccionados: elimina los recursos (y no llega al atajo global que borra clips)
+    e.preventDefault()
+    e.stopPropagation()
+    void deleteSelected()
+    return
+  }
   if (e.key === 'F2' && selected.value.length === 1) {
     const m = project.project?.media.find((x) => x.id === selected.value[0])
     if (m) {
@@ -164,6 +171,11 @@ function preview(m: MediaItem): void {
 function onMenu(e: MouseEvent, m: MediaItem): void {
   const inProject = m.storage === 'project'
   if (!selected.value.includes(m.id)) selected.value = [m.id]
+  if (selected.value.length > 1) {
+    // Varios recursos: solo se ofrece eliminarlos todos
+    ui.openMenu(e, [{ label: `Eliminar ${selected.value.length} recursos`, icon: 'trash', shortcut: 'Supr', action: () => void deleteSelected() }])
+    return
+  }
   ui.openMenu(e, [
     ...(isMissing(m) ? [] : [...insertMenuItems(m.id), { label: '', separator: true } as const]),
     { label: 'Renombrar', icon: 'pencil', shortcut: 'F2', action: () => void startRename(m) },
@@ -176,7 +188,18 @@ function onMenu(e: MouseEvent, m: MediaItem): void {
   ])
 }
 async function confirmDelete(m: MediaItem): Promise<void> {
-  if (await ui.askDeleteMedia(fileName(m))) await project.removeMedia(m.id, true)
+  if (await ui.askDeleteMedia([fileName(m)])) await project.removeMedia(m.id, true)
+}
+
+/** Elimina todos los recursos seleccionados tras confirmar en el modal (que separa lo que se borra del disco de lo que solo se quita). */
+async function deleteSelected(): Promise<void> {
+  const list = (project.project?.media ?? []).filter((m) => selected.value.includes(m.id))
+  if (!list.length) return
+  const files = list.filter((m) => m.storage === 'project' && !isGeneratedKind(m.kind)).map(fileName)
+  const others = list.filter((m) => m.storage !== 'project' || isGeneratedKind(m.kind)).map(fileName)
+  if (!(await ui.askDeleteMedia(files, others))) return
+  await project.removeMediaMany(list.map((m) => m.id))
+  selected.value = []
 }
 
 function onDrop(e: DragEvent): void {

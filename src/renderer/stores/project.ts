@@ -187,6 +187,41 @@ export const useProjectStore = defineStore('project', {
       ui.showInfo(isGeneratedKind(media.kind) ? 'Recurso eliminado.' : deleteFile ? 'Recurso eliminado del disco.' : 'Referencia quitada.')
     },
 
+    /**
+     * Elimina varios recursos de una vez junto con sus clips: los archivos dentro del proyecto se borran del disco; las
+     * referencias externas, textos y formas solo se quitan. Un solo guardado al final. No es deshacible.
+     */
+    async removeMediaMany(ids: string[]): Promise<void> {
+      const ui = useUiStore()
+      const p = this.project
+      if (!p) return
+      const removed = new Set<string>()
+      const failed: string[] = []
+      for (const m of p.media.filter((x) => ids.includes(x.id))) {
+        if (m.storage === 'project' && !isGeneratedKind(m.kind)) {
+          const r = await window.viditor.media.deleteFile(m.id, m.path)
+          if (!r.ok) {
+            failed.push(m.path.split('/').pop() ?? m.path)
+            continue
+          }
+        }
+        removed.add(m.id)
+      }
+      if (removed.size) {
+        this.mutate((proj) => {
+          const gone = new Set(proj.clips.filter((c) => removed.has(c.mediaId)).map((c) => c.id))
+          proj.clips = proj.clips.filter((c) => !gone.has(c.id))
+          proj.transitions = proj.transitions.filter((t) => !(t.leaveClipId && gone.has(t.leaveClipId)) && !(t.enterClipId && gone.has(t.enterClipId)))
+          proj.media = proj.media.filter((m) => !removed.has(m.id))
+        })
+        this.missing = this.missing.filter((id) => !removed.has(id))
+        useTimelineStore().reset()
+        await this.save()
+      }
+      if (failed.length) ui.showError(`No se pudo eliminar: ${failed.join(', ')}`)
+      else ui.showInfo(removed.size === 1 ? 'Recurso eliminado.' : `${removed.size} recursos eliminados.`)
+    },
+
     async importWithDialog(): Promise<void> {
       const files = await window.viditor.dialogs.chooseMediaFiles()
       if (files.length) await this.importPaths(files)
